@@ -3,11 +3,13 @@
  *
  * @param {Object} opts
  * @param {number} opts.sampleRate
- * @param {number} [opts.bitDepth=16] - 16 or 32 (float)
+ * @param {number} [opts.bitDepth=16] - 16 or 24 (int PCM), or 32 (float)
  * @returns {{ encode, flush, free }}
  */
 export default async function wav(opts) {
 	let { sampleRate, bitDepth = 16 } = opts
+	if (bitDepth !== 16 && bitDepth !== 24 && bitDepth !== 32)
+		throw Error('Unsupported bitDepth: ' + bitDepth + ' (use 16, 24, or 32)')
 	let float = bitDepth === 32
 	let bps = bitDepth >> 3
 	let fmt = float ? 3 : 1
@@ -31,9 +33,16 @@ export default async function wav(opts) {
 				if (float) {
 					dv.setFloat32(off, s, true)
 				} else {
-					// clamp to [-1, 1], scale to int16
+					// clamp to [-1, 1], scale to signed int
 					s = s < -1 ? -1 : s > 1 ? 1 : s
-					dv.setInt16(off, Math.round(s * 0x7FFF), true)
+					if (bitDepth === 24) {
+						let v = Math.round(s * 0x7FFFFF)
+						buf[off] = v & 0xFF
+						buf[off + 1] = (v >> 8) & 0xFF
+						buf[off + 2] = (v >> 16) & 0xFF
+					} else {
+						dv.setInt16(off, Math.round(s * 0x7FFF), true)
+					}
 				}
 				off += bps
 			}

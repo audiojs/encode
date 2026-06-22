@@ -1,6 +1,6 @@
 {
   "name": "@audio/encode-opus",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "Encode PCM audio samples to Ogg Opus format via WASM",
   "type": "module",
   "main": "opus-encode.js",

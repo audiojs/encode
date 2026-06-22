@@ -1,20 +1,38 @@
 type AudioInput = Float32Array[] | Float32Array | { numberOfChannels: number; getChannelData(i: number): Float32Array };
 
+export interface Meta {
+	title?: string; artist?: string; album?: string; albumartist?: string;
+	composer?: string; genre?: string; year?: string | number; track?: string | number;
+	disc?: string | number; bpm?: string | number; key?: string; comment?: string;
+	copyright?: string; isrc?: string; publisher?: string; software?: string; lyrics?: string;
+	pictures?: { mime?: string; description?: string; type?: number; data: Uint8Array }[];
+	[key: string]: any;
+}
+
+export interface Marker { sample: number; label?: string; }
+export interface Region { sample: number; length: number; label?: string; }
+
 export interface EncodeOptions {
 	/** Output sample rate (required). */
 	sampleRate: number;
 	/** Output channel count. */
 	channels?: number;
-	/** Target bitrate in kbps (lossy). */
+	/** Target bitrate in kbps (lossy: mp3, opus, webm, aac). */
 	bitrate?: number;
-	/** Quality 0-10 (VBR, format-specific). */
+	/** Quality 0-10 (VBR, format-specific: ogg, mp3). */
 	quality?: number;
-	/** Bit depth: 16|32 for wav, 16|24 for aiff/flac. */
+	/** Bit depth: 16|24|32 for wav, 16|24 for aiff/flac, 16|32 for caf. */
 	bitDepth?: number;
 	/** FLAC compression level 0-8. */
 	compression?: number;
-	/** Opus application: 'audio', 'voip', 'lowdelay'. */
+	/** Opus/WebM application: 'audio', 'voip', 'lowdelay'. */
 	application?: string;
+	/** Tags. Baked in for opus; for wav/mp3/flac/aiff/ogg also available via encode-audio/meta. */
+	meta?: Meta;
+	/** Cue markers (wav). */
+	markers?: Marker[];
+	/** Labeled regions (wav). */
+	regions?: Region[];
 	[key: string]: any;
 }
 
@@ -48,14 +66,30 @@ declare const encode: {
 
 	wav: FormatEncoder;
 	aiff: FormatEncoder;
+	caf: FormatEncoder;
 	mp3: FormatEncoder;
 	ogg: FormatEncoder;
 	flac: FormatEncoder;
 	opus: FormatEncoder;
-	[format: string]: FormatEncoder;
+	/** WebM (Opus). */
+	webm: FormatEncoder;
+	/** AAC (ADTS) — browser-only via WebCodecs; throws in Node. */
+	aac: FormatEncoder;
+	/** QOA (Quite OK Audio). */
+	qoa: FormatEncoder;
+	/** Supported format names. */
+	formats: string[];
+	/** Format → MIME type. */
+	mime: Record<string, string>;
+	[format: string]: any;
 };
 
 export default encode;
+
+/** Supported format names. */
+export const formats: string[];
+/** Format → MIME type map. */
+export const mime: Record<string, string>;
 
 /** Chunked encode from async iterable. */
 export function encodeChunked(

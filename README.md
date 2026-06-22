@@ -20,8 +20,14 @@ const buf = await encode.wav(channelData, { sampleRate: 44100 });
 | MP3 | [@audio/encode-mp3](https://npmjs.com/package/@audio/encode-mp3) | WASM |
 | OGG Vorbis | [@audio/encode-ogg](https://npmjs.com/package/@audio/encode-ogg) | WASM |
 | Opus | [@audio/encode-opus](https://npmjs.com/package/@audio/encode-opus) | WASM |
+| WebM | [@audio/encode-webm](https://npmjs.com/package/@audio/encode-webm) | WASM (Opus) |
 | FLAC | [@audio/encode-flac](https://npmjs.com/package/@audio/encode-flac) | WASM |
+| AAC | [@audio/encode-aac](https://npmjs.com/package/@audio/encode-aac) | WebCodecs* |
 | AIFF | [@audio/encode-aiff](https://npmjs.com/package/@audio/encode-aiff) | JS |
+| CAF | [@audio/encode-caf](https://npmjs.com/package/@audio/encode-caf) | JS |
+| QOA | [@audio/encode-qoa](https://npmjs.com/package/@audio/encode-qoa) | JS |
+
+<sub>* AAC uses the native [WebCodecs](https://developer.mozilla.org/en-US/docs/Web/API/AudioEncoder) `AudioEncoder` — browser-only (Chromium/Safari), throws in Node.</sub>
 
 ### Whole-file encode
 
@@ -32,11 +38,17 @@ import encode from 'encode-audio';
 
 const wav  = await encode.wav(channelData, { sampleRate: 44100 });
 const aiff = await encode.aiff(channelData, { sampleRate: 44100 });
+const caf  = await encode.caf(channelData, { sampleRate: 44100 });
 const mp3  = await encode.mp3(channelData, { sampleRate: 44100, bitrate: 128 });
 const ogg  = await encode.ogg(channelData, { sampleRate: 44100, quality: 5 });
 const flac = await encode.flac(channelData, { sampleRate: 44100 });
 const opus = await encode.opus(channelData, { sampleRate: 48000, bitrate: 96 });
+const webm = await encode.webm(channelData, { sampleRate: 48000, bitrate: 96 });
+const qoa  = await encode.qoa(channelData, { sampleRate: 44100 });
+const aac  = await encode.aac(channelData, { sampleRate: 44100, bitrate: 128 }); // browser only
 ```
+
+`encode.formats` lists the supported names and `encode.mime` maps each to a MIME type — handy for format-agnostic pipelines.
 
 ### Chunked encoding
 
@@ -73,23 +85,33 @@ Works with any async iterable source.
 | Option | Description | Applies to |
 |--------|-------------|------------|
 | `sampleRate` | Output sample rate (required) | all |
-| `bitrate` | Target bitrate in kbps | mp3, opus |
+| `bitrate` | Target bitrate in kbps | mp3, opus, webm, aac |
 | `quality` | Quality 0–10 (VBR) | ogg, mp3 |
 | `channels` | Output channel count | all |
-| `bitDepth` | Bit depth: 16 or 32 (wav), 16 or 24 (aiff, flac) | wav, aiff, flac |
+| `bitDepth` | Bit depth: 16/24/32 (wav), 16/24 (aiff, flac), 16/32 (caf) | wav, aiff, flac, caf |
 | `compression` | FLAC compression level 0–8 | flac |
-| `application` | `'audio'`, `'voip'`, or `'lowdelay'` | opus |
+| `application` | `'audio'`, `'voip'`, or `'lowdelay'` | opus, webm |
+| `meta` | Tags (see below) | wav, mp3, flac, aiff, ogg, opus |
 
 
 ### Metadata
 
-Splice tags, pictures, markers and regions into encoded bytes. Available for `wav`, `mp3`, `flac`.
+Pass `meta` (and, for `wav`, `markers`/`regions`) straight to the encoder:
 
 ```js
-import encode from 'encode-audio'
+let bytes = await encode.flac(channelData, {
+  sampleRate: 44100,
+  meta: { title: 'Hare Krishna', artist: 'Prabhupada', year: '1966' }
+})
+```
+
+Tags work for `wav`, `mp3`, `flac`, `aiff`, `ogg` and `opus`. Cue `markers` and `regions` are `wav`-only. `opus` bakes tags into the OpusTags header at encode time (stays fully streaming); the others splice tags into the finished file — so passing `meta` to a **streaming/chunked** encode of `wav`/`mp3`/`flac`/`aiff`/`ogg` buffers the output and emits it on flush.
+
+You can also tag already-encoded bytes via `encode-audio/meta`:
+
+```js
 import { wav } from 'encode-audio/meta'
 
-let bytes = await encode.wav(channelData, { sampleRate: 44100 })
 let out = wav(bytes, {
   meta: { title: 'Hare Krishna', artist: 'Prabhupada', year: '1966' },
   markers: [{ sample: 44100, label: 'verse' }],

@@ -1,38 +1,38 @@
 {
-  "name": "@audio/encode-aiff",
-  "version": "1.1.0",
-  "description": "Encode PCM audio samples to AIFF format",
+  "name": "@audio/encode-caf",
+  "version": "1.0.0",
+  "description": "Encode PCM audio samples to CAF (Core Audio Format) LPCM",
   "type": "module",
-  "main": "aiff-encode.js",
-  "types": "aiff-encode.d.ts",
+  "main": "caf-encode.js",
+  "types": "caf-encode.d.ts",
   "exports": {
-    ".": "./aiff-encode.js",
-    "./meta": "./meta.js",
+    ".": "./caf-encode.js",
     "./package.json": "./package.json"
   },
   "files": [
-    "aiff-encode.js",
-    "aiff-encode.d.ts",
-    "meta.js",
+    "caf-encode.js",
+    "caf-encode.d.ts",
     "LICENSE"
   ],
   "keywords": [
-    "aiff",
+    "caf",
+    "core-audio",
+    "lpcm",
     "audio",
     "encode",
     "encoder",
-    "pcm"
+    "codec"
   ],
   "publishConfig": {
     "access": "public"
   },
   "license": "MIT",
   "author": "audiojs",
-  "homepage": "https://github.com/audiojs/audio-encode/tree/main/packages/encode-aiff",
+  "homepage": "https://github.com/audiojs/audio-encode/tree/main/packages/encode-caf",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/audiojs/audio-encode.git",
-    "directory": "packages/encode-aiff"
+    "directory": "packages/encode-caf"
   },
   "engines": {
     "node": ">=16"

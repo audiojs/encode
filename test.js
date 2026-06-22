@@ -1,5 +1,6 @@
 import t, { is, ok, almost } from 'tst'
-import encode from './audio-encode.js'
+import encode, { formats, mime } from './audio-encode.js'
+import { aiff as aiffMeta, ogg as oggMeta } from './meta.js'
 import decode from 'audio-decode'
 import AudioBuffer from 'audio-buffer'
 
@@ -7,6 +8,16 @@ function rms(arr) {
 	let sum = 0
 	for (let i = 0; i < arr.length; i++) sum += arr[i] * arr[i]
 	return Math.sqrt(sum / arr.length)
+}
+
+// byte-search for an ASCII substring
+function has(buf, str) {
+	let needle = new TextEncoder().encode(str)
+	outer: for (let i = 0; i <= buf.length - needle.length; i++) {
+		for (let j = 0; j < needle.length; j++) if (buf[i + j] !== needle[j]) continue outer
+		return true
+	}
+	return false
 }
 
 function sine(sr = 44100, freq = 440, dur = 1) {
@@ -134,4 +145,107 @@ t('ogg mono — channels inferred from data', async () => {
 	let mono = sine(44100, 440, 0.5)
 	let buf = await encode.ogg(mono, { sampleRate: 44100 })
 	ok(buf.length > 0, 'encoded without error')
+})
+
+// --- new formats ---
+
+t('qoa round-trip', async () => {
+	let { channelData, sampleRate } = await getLena()
+	let buf = await encode.qoa(channelData, { sampleRate })
+	ok(buf.length > 8, 'has data')
+	let dec = await decode(buf)
+	is(dec.sampleRate, sampleRate)
+	almost(rms(dec.channelData[0]), rms(channelData[0]), 0.05, 'rms within QOA lossy tolerance')
+})
+
+t('caf encode (structural)', async () => {
+	let { channelData, sampleRate } = await getLena()
+	let buf = await encode.caf(channelData, { sampleRate })
+	ok(has(buf, 'caff'), 'caff magic')
+	ok(has(buf, 'desc') && has(buf, 'lpcm') && has(buf, 'data'), 'desc/lpcm/data chunks')
+	let dv = new DataView(buf.buffer, buf.byteOffset)
+	is(dv.getUint16(4, false), 1, 'caf version 1')
+})
+
+t('caf 32-float', async () => {
+	let buf = await encode.caf(sine(44100, 440, 0.25), { sampleRate: 44100, bitDepth: 32 })
+	ok(has(buf, 'caff') && has(buf, 'lpcm'), 'float caf valid')
+})
+
+t('webm encode (structural)', async () => {
+	let { channelData, sampleRate } = await getLena()
+	let buf = await encode.webm(channelData, { sampleRate, channels: 1, bitrate: 64 })
+	ok(buf[0] === 0x1A && buf[1] === 0x45 && buf[2] === 0xDF && buf[3] === 0xA3, 'EBML magic')
+	ok(has(buf, 'webm'), 'DocType webm')
+	ok(has(buf, 'A_OPUS') && has(buf, 'OpusHead'), 'Opus track + CodecPrivate')
+})
+
+t('aac throws clearly in node (WebCodecs only)', async () => {
+	let threw = false, msg = ''
+	try { await encode.aac(sine(44100, 440, 0.25), { sampleRate: 44100 }) }
+	catch (e) { threw = true; msg = e.message }
+	ok(threw, 'rejected in node')
+	ok(/webcodecs|browser/i.test(msg), 'message names WebCodecs/browser: ' + msg)
+})
+
+// --- wav 24-bit ---
+
+t('wav 24-bit round-trip', async () => {
+	let { channelData, sampleRate } = await getLena()
+	let buf = await encode.wav(channelData, { sampleRate, bitDepth: 24 })
+	let dv = new DataView(buf.buffer, buf.byteOffset)
+	is(dv.getUint16(34, true), 24, 'header bitsPerSample = 24')
+	let dec = await decode(buf)
+	almost(rms(dec.channelData[0]), rms(channelData[0]), 0.001, 'rms near-identical')
+})
+
+t('PCM encoders reject unsupported bitDepth (fail-fast, no silent corruption)', async () => {
+	let s = sine(44100, 440, 0.1)
+	let rejects = async (fmt, depth) => {
+		try { await encode[fmt](s, { sampleRate: 44100, bitDepth: depth }); return false }
+		catch { return true }
+	}
+	ok(await rejects('wav', 20), 'wav rejects 20')
+	ok(await rejects('aiff', 32), 'aiff rejects 32') // would misalign 3-byte writes
+	ok(await rejects('caf', 24), 'caf rejects 24')   // would write int16 into 3-byte slots
+})
+
+// --- metadata ---
+
+t('opus meta — VorbisComment baked into OpusTags (streamed)', async () => {
+	let buf = await encode.opus(sine(48000, 440, 0.25), { sampleRate: 48000, meta: { title: 'Hare Krishna', artist: 'Prabhupada' } })
+	ok(has(buf, 'OpusTags'), 'OpusTags packet')
+	ok(has(buf, 'TITLE=Hare Krishna') && has(buf, 'ARTIST=Prabhupada'), 'tags present')
+	let dec = await decode(buf)
+	ok(dec.channelData[0].length > 0, 'still decodes')
+})
+
+t('aiff meta — ID3 chunk via opts and via writer', async () => {
+	let { channelData, sampleRate } = await getLena()
+	let viaOpts = await encode.aiff(channelData, { sampleRate, meta: { title: 'Govinda' } })
+	ok(has(viaOpts, 'ID3 ') && has(viaOpts, 'Govinda'), 'meta via opts')
+	is(String.fromCharCode(viaOpts[0], viaOpts[1], viaOpts[2], viaOpts[3]), 'FORM', 'still FORM')
+	let raw = await encode.aiff(channelData, { sampleRate })
+	let tagged = aiffMeta(raw, { meta: { title: 'Radhe', artist: 'Krishna' } })
+	ok(has(tagged, 'Radhe') && has(tagged, 'Krishna'), 'writer injects tags')
+})
+
+t('ogg meta — VorbisComment rewrite preserves audio', async () => {
+	let { channelData, sampleRate } = await getLena()
+	let raw = await encode.ogg(channelData, { sampleRate, channels: 1, quality: 5 })
+	let rawDec = await decode(raw)
+	let tagged = oggMeta(raw, { meta: { title: 'Jaya', artist: 'Nitai' } })
+	ok(has(tagged, 'TITLE=Jaya') && has(tagged, 'ARTIST=Nitai'), 'tags present')
+	let dec = await decode(tagged)
+	is(dec.channelData[0].length, rawDec.channelData[0].length, 'sample count unchanged')
+	almost(rms(dec.channelData[0]), rms(rawDec.channelData[0]), 0.0001, 'audio bit-identical')
+})
+
+// --- format registry ---
+
+t('formats list + mime map', async () => {
+	ok(formats.includes('webm') && formats.includes('qoa') && formats.includes('caf') && formats.includes('aac'), 'new formats listed')
+	is(formats.length, 10, '10 formats')
+	is(mime.webm, 'audio/webm')
+	is(encode.formats, formats, 'exposed on encode too')
 })

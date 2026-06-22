@@ -7,6 +7,8 @@
  */
 export default async function aiff(opts) {
 	let rate = opts.sampleRate, depth = opts.bitDepth || 16
+	if (depth !== 16 && depth !== 24)
+		throw Error('Unsupported bitDepth: ' + depth + ' (use 16 or 24)')
 	let bytesPerSample = depth >> 3
 	let chunks = [], totalBytes = 0, numFrames = 0, nCh = 0
 

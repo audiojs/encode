@@ -10,6 +10,7 @@
  * @param {number} [opts.channels=1] - 1 or 2
  * @param {number} [opts.bitrate=64] - kbps
  * @param {string} [opts.application='audio'] - 'voip', 'audio', or 'lowdelay'
+ * @param {object} [opts.meta] - VorbisComment tags (title, artist, …) baked into OpusTags
  * @returns {{ encode, flush, free }}
  *
  * encode(channels: Float32Array[]) -> Uint8Array (Ogg pages for this chunk)
@@ -44,10 +45,10 @@ export default async function opus(opts) {
 	let pcmBuf = new Int16Array(0)
 	let headerSent = false
 
-	// header pages (BOS + tags)
+	// header pages (BOS + tags). Metadata is baked into OpusTags here — no buffering.
 	let headerPages = [
 		oggPage(opusHead(nch, PRE_SKIP, rate), serial, pageSeq++, 0n, 0x02),
-		oggPage(opusTags(), serial, pageSeq++, 0n, 0x00)
+		oggPage(opusTags(metaToComments(opts.meta)), serial, pageSeq++, 0n, 0x00)
 	]
 
 	return { encode: encodeChunk, flush, free }
@@ -196,14 +197,44 @@ function opusHead(ch, preSkip, inputRate) {
 	return b
 }
 
-function opusTags() {
-	let v = 'audio-encode'
-	let b = new Uint8Array(8 + 4 + v.length + 4)
+// VorbisComment field map (shared shape with FLAC/Vorbis)
+const VORBIS_MAP = {
+	title: 'TITLE', artist: 'ARTIST', album: 'ALBUM', albumartist: 'ALBUMARTIST',
+	composer: 'COMPOSER', genre: 'GENRE', year: 'DATE', track: 'TRACKNUMBER',
+	disc: 'DISCNUMBER', bpm: 'BPM', key: 'KEY', comment: 'COMMENT',
+	copyright: 'COPYRIGHT', isrc: 'ISRC', publisher: 'PUBLISHER', software: 'ENCODER',
+	lyrics: 'LYRICS'
+}
+
+function metaToComments(meta) {
+	if (!meta) return []
+	let out = []
+	for (let k in VORBIS_MAP) {
+		let v = meta[k]
+		if (v == null || v === '') continue
+		out.push(VORBIS_MAP[k] + '=' + v)
+	}
+	return out
+}
+
+const TE = new TextEncoder()
+
+function opusTags(comments = []) {
+	let vendor = TE.encode('audio-encode')
+	let entries = comments.map(c => TE.encode(c))
+	let size = 8 + 4 + vendor.length + 4
+	for (let e of entries) size += 4 + e.length
+	let b = new Uint8Array(size)
 	let d = new DataView(b.buffer)
 	set8(b, 0, 'OpusTags')
-	d.setUint32(8, v.length, true)
-	for (let i = 0; i < v.length; i++) b[12 + i] = v.charCodeAt(i)
-	d.setUint32(12 + v.length, 0, true) // 0 comments
+	let pos = 8
+	d.setUint32(pos, vendor.length, true); pos += 4
+	b.set(vendor, pos); pos += vendor.length
+	d.setUint32(pos, entries.length, true); pos += 4
+	for (let e of entries) {
+		d.setUint32(pos, e.length, true); pos += 4
+		b.set(e, pos); pos += e.length
+	}
 	return b
 }
 

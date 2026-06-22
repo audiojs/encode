@@ -57,15 +57,22 @@ const META_WRITERS = {
 	wav: () => import('@audio/encode-wav/meta').then(m => m.writeMeta),
 	mp3: () => import('@audio/encode-mp3/meta').then(m => m.writeMeta),
 	flac: () => import('@audio/encode-flac/meta').then(m => m.writeMeta),
+	aiff: () => import('@audio/encode-aiff/meta').then(m => m.writeMeta),
+	ogg: () => import('@audio/encode-ogg/meta').then(m => m.writeMeta),
 }
+
+// Formats that bake metadata into the encoder itself (Ogg OpusTags) — streamed,
+// never buffered. The rest splice meta post-hoc via META_WRITERS on flush.
+const NATIVE_META = new Set(['opus'])
 
 function reg(name, load) {
 	encode[name] = fmt(name, async (opts) => {
 		let { meta, markers, regions, ...rest } = opts || {}
+		let hasMeta = meta || markers?.length || regions?.length
 		let init = (await load()).default
-		let codec = await init(rest)
-		// No meta requested (or unsupported by format): pass through.
-		if (!META_WRITERS[name] || !(meta || markers?.length || regions?.length))
+		let codec = await init(NATIVE_META.has(name) && hasMeta ? { ...rest, meta } : rest)
+		// Native-meta, no post-splice writer, or no meta requested: pass through.
+		if (NATIVE_META.has(name) || !META_WRITERS[name] || !hasMeta)
 			return streamEncoder(ch => codec.encode(ch), () => codec.flush(), () => codec.free())
 		// Meta requested: buffer encoder output, splice via writeMeta on flush.
 		let writeMeta = await META_WRITERS[name]()
@@ -86,10 +93,24 @@ function reg(name, load) {
 
 reg('wav', () => import('@audio/encode-wav'))
 reg('aiff', () => import('@audio/encode-aiff'))
+reg('caf', () => import('@audio/encode-caf'))
 reg('mp3', () => import('@audio/encode-mp3'))
 reg('ogg', () => import('@audio/encode-ogg'))
 reg('flac', () => import('@audio/encode-flac'))
 reg('opus', () => import('@audio/encode-opus'))
+reg('webm', () => import('@audio/encode-webm'))
+reg('aac', () => import('@audio/encode-aac'))
+reg('qoa', () => import('@audio/encode-qoa'))
+
+// Supported format names and their MIME types — for format-agnostic pipelines.
+export const formats = ['wav', 'aiff', 'caf', 'mp3', 'ogg', 'flac', 'opus', 'webm', 'aac', 'qoa']
+export const mime = {
+	wav: 'audio/wav', aiff: 'audio/aiff', caf: 'audio/x-caf',
+	mp3: 'audio/mpeg', ogg: 'audio/ogg', flac: 'audio/flac',
+	opus: 'audio/ogg', webm: 'audio/webm', aac: 'audio/aac', qoa: 'audio/qoa',
+}
+encode.formats = formats
+encode.mime = mime
 
 /**
  * Wrap a stream factory into whole-file encoder + streaming
