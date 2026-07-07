@@ -1,5 +1,5 @@
 {
-  "name": "encode-audio",
+  "name": "@audio/encode",
   "version": "1.6.0",
   "description": "Encode audio data in node or browser",
   "type": "module",
@@ -56,7 +56,7 @@
     "pcm",
     "streaming"
   ],
-  "author": "ΔY <dfcreative@gmail.com>",
+  "author": "Dmitry Iv. <dfcreative@gmail.com>",
   "license": "MIT",
   "bugs": {
     "url": "https://github.com/audiojs/audio-encode/issues"
@@ -80,5 +80,11 @@
     "audio-lena": "^3.0.0",
     "esbuild": "^0.28.0",
     "tst": "^9.2.2"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }
