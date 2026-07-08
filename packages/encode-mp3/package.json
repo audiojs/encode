@@ -29,16 +29,16 @@
   },
   "license": "MIT",
   "author": "audiojs",
-  "homepage": "https://github.com/audiojs/audio-encode/tree/main/packages/encode-mp3",
+  "homepage": "https://github.com/audiojs/encode/tree/main/packages/encode-mp3",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/audiojs/audio-encode.git",
+    "url": "git+https://github.com/audiojs/encode.git",
     "directory": "packages/encode-mp3"
   },
   "engines": {
     "node": ">=16"
   },
-  "bugs": "https://github.com/audiojs/audio-encode/issues",
+  "bugs": "https://github.com/audiojs/encode/issues",
   "scripts": {
     "test": "node test.js",
     "build": "bash build.sh",

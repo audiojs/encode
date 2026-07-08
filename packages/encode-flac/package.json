@@ -29,16 +29,16 @@
   },
   "license": "MIT",
   "author": "audiojs",
-  "homepage": "https://github.com/audiojs/audio-encode/tree/main/packages/encode-flac",
+  "homepage": "https://github.com/audiojs/encode/tree/main/packages/encode-flac",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/audiojs/audio-encode.git",
+    "url": "git+https://github.com/audiojs/encode.git",
     "directory": "packages/encode-flac"
   },
   "engines": {
     "node": ">=16"
   },
-  "bugs": "https://github.com/audiojs/audio-encode/issues",
+  "bugs": "https://github.com/audiojs/encode/issues",
   "dependencies": {
     "libflacjs": "^5.4.0"
   },

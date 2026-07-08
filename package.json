@@ -35,7 +35,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/audiojs/audio-encode.git"
+    "url": "git+https://github.com/audiojs/encode.git"
   },
   "keywords": [
     "audio",
@@ -59,9 +59,9 @@
   "author": "Dmitry Iv. <dfcreative@gmail.com>",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/audiojs/audio-encode/issues"
+    "url": "https://github.com/audiojs/encode/issues"
   },
-  "homepage": "https://github.com/audiojs/audio-encode#readme",
+  "homepage": "https://github.com/audiojs/encode#readme",
   "dependencies": {
     "@audio/encode-aac": "^1.0.0",
     "@audio/encode-aiff": "^1.1.0",

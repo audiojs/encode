@@ -1,4 +1,4 @@
-# @audio/encode [![test](https://github.com/audiojs/audio-encode/actions/workflows/test.js.yml/badge.svg)](https://github.com/audiojs/audio-encode/actions/workflows/test.js.yml)
+# @audio/encode [![test](https://github.com/audiojs/encode/actions/workflows/test.js.yml/badge.svg)](https://github.com/audiojs/encode/actions/workflows/test.js.yml)
 
 Encode raw audio samples to any format.<br>
 JS / WASM – no ffmpeg, no native bindings, works in both node and browser.<br>
@@ -129,7 +129,7 @@ let tagged = writeMeta(mp3Bytes, { meta: { title: 'foo' } })
 
 ## See also
 
-* [audio-decode](https://github.com/audiojs/audio-decode) – decode any audio format to raw samples.
+* [decode](https://github.com/audiojs/decode) – decode any audio format to raw samples.
 * [wasm-media-encoders](https://github.com/arseneyr/wasm-media-encoders) – compact WASM MP3 & Vorbis encoders.
 * [AudioEncoder](https://developer.mozilla.org/en-US/docs/Web/API/AudioEncoder) – native WebCodecs encoder API.
 

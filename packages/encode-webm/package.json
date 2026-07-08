@@ -29,16 +29,16 @@
   },
   "license": "MIT",
   "author": "audiojs",
-  "homepage": "https://github.com/audiojs/audio-encode/tree/main/packages/encode-webm",
+  "homepage": "https://github.com/audiojs/encode/tree/main/packages/encode-webm",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/audiojs/audio-encode.git",
+    "url": "git+https://github.com/audiojs/encode.git",
     "directory": "packages/encode-webm"
   },
   "engines": {
     "node": ">=16"
   },
-  "bugs": "https://github.com/audiojs/audio-encode/issues",
+  "bugs": "https://github.com/audiojs/encode/issues",
   "dependencies": {
     "opusscript": "^0.1.1"
   },
