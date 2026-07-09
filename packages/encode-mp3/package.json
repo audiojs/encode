@@ -1,6 +1,6 @@
 {
   "name": "@audio/encode-mp3",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Encode PCM audio samples to MP3 format via WASM",
   "type": "module",
   "main": "mp3-encode.js",
