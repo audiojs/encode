@@ -1,12 +1,12 @@
-# @audio/ogg-encode
+# @audio/encode-ogg
 
 Encode PCM audio samples to OGG Vorbis format.<br>
 WASM (libvorbis via wasm-media-encoders) — works in both node and browser.
 
-[![npm install @audio/ogg-encode](https://nodei.co/npm/@audio/ogg-encode.png?mini=true)](https://npmjs.org/package/@audio/ogg-encode/)
+[![npm install @audio/encode-ogg](https://nodei.co/npm/@audio/encode-ogg.png?mini=true)](https://npmjs.org/package/@audio/encode-ogg/)
 
 ```js
-import ogg from '@audio/ogg-encode';
+import ogg from '@audio/encode-ogg';
 
 const encoder = await ogg({ sampleRate: 44100, channels: 1, quality: 5 });
 const chunk = encoder.encode(channelData); // → Uint8Array (OGG pages)

@@ -1,12 +1,12 @@
-# @audio/flac-encode
+# @audio/encode-flac
 
 Encode PCM audio samples to FLAC (lossless) format.<br>
 WASM (libFLAC via libflacjs) — works in both node and browser.
 
-[![npm install @audio/flac-encode](https://nodei.co/npm/@audio/flac-encode.png?mini=true)](https://npmjs.org/package/@audio/flac-encode/)
+[![npm install @audio/encode-flac](https://nodei.co/npm/@audio/encode-flac.png?mini=true)](https://npmjs.org/package/@audio/encode-flac/)
 
 ```js
-import flac from '@audio/flac-encode';
+import flac from '@audio/encode-flac';
 
 const encoder = await flac({ sampleRate: 44100 });
 const chunk = encoder.encode(channelData); // → Uint8Array (FLAC frames)

@@ -1,12 +1,12 @@
-# @audio/mp3-encode
+# @audio/encode-mp3
 
 Encode PCM audio samples to MP3 format.<br>
 WASM (libmp3lame via wasm-media-encoders) — works in both node and browser.
 
-[![npm install @audio/mp3-encode](https://nodei.co/npm/@audio/mp3-encode.png?mini=true)](https://npmjs.org/package/@audio/mp3-encode/)
+[![npm install @audio/encode-mp3](https://nodei.co/npm/@audio/encode-mp3.png?mini=true)](https://npmjs.org/package/@audio/encode-mp3/)
 
 ```js
-import mp3 from '@audio/mp3-encode';
+import mp3 from '@audio/encode-mp3';
 
 const encoder = await mp3({ sampleRate: 44100, channels: 1, bitrate: 128 });
 const chunk = encoder.encode(channelData); // → Uint8Array (MP3 frames)

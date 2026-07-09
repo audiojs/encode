@@ -1,12 +1,12 @@
-# @audio/aiff-encode
+# @audio/encode-aiff
 
 Encode PCM audio samples to AIFF format.<br>
 Pure JS — no WASM, no native bindings, works in both node and browser.
 
-[![npm install @audio/aiff-encode](https://nodei.co/npm/@audio/aiff-encode.png?mini=true)](https://npmjs.org/package/@audio/aiff-encode/)
+[![npm install @audio/encode-aiff](https://nodei.co/npm/@audio/encode-aiff.png?mini=true)](https://npmjs.org/package/@audio/encode-aiff/)
 
 ```js
-import aiff from '@audio/aiff-encode';
+import aiff from '@audio/encode-aiff';
 
 const encoder = await aiff({ sampleRate: 44100 });
 encoder.encode(channelData);    // buffer PCM

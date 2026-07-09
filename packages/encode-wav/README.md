@@ -1,12 +1,12 @@
-# @audio/wav-encode
+# @audio/encode-wav
 
 Encode PCM audio samples to WAV format.<br>
 Pure JS — no WASM, no native bindings, works in both node and browser.
 
-[![npm install @audio/wav-encode](https://nodei.co/npm/@audio/wav-encode.png?mini=true)](https://npmjs.org/package/@audio/wav-encode/)
+[![npm install @audio/encode-wav](https://nodei.co/npm/@audio/encode-wav.png?mini=true)](https://npmjs.org/package/@audio/encode-wav/)
 
 ```js
-import wav from '@audio/wav-encode';
+import wav from '@audio/encode-wav';
 
 const encoder = await wav({ sampleRate: 44100 });
 encoder.encode(channelData);    // buffer PCM

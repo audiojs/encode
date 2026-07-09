@@ -1,12 +1,12 @@
-# @audio/opus-encode
+# @audio/encode-opus
 
 Encode PCM audio samples to Ogg Opus format.<br>
 WASM (libopus via opusscript) with built-in Ogg muxer — works in both node and browser.
 
-[![npm install @audio/opus-encode](https://nodei.co/npm/@audio/opus-encode.png?mini=true)](https://npmjs.org/package/@audio/opus-encode/)
+[![npm install @audio/encode-opus](https://nodei.co/npm/@audio/encode-opus.png?mini=true)](https://npmjs.org/package/@audio/encode-opus/)
 
 ```js
-import opus from '@audio/opus-encode';
+import opus from '@audio/encode-opus';
 
 const encoder = await opus({ sampleRate: 48000, channels: 1, bitrate: 96 });
 const chunk = encoder.encode(channelData); // → Uint8Array (Ogg pages)
