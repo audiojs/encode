@@ -42,7 +42,7 @@
     "directory": "packages/encode-mp3"
   },
   "engines": {
-    "node": ">=16"
+    "node": ">=18"
   },
   "bugs": "https://github.com/audiojs/encode/issues",
   "scripts": {
@@ -53,5 +53,6 @@
   "dependencies": {
     "wasm-media-encoders": "^0.7.0"
   },
-  "audio": "./audio.js"
+  "audio": "./audio.js",
+  "sideEffects": false
 }

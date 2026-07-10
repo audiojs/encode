@@ -43,11 +43,12 @@
     "directory": "packages/encode-qoa"
   },
   "engines": {
-    "node": ">=16"
+    "node": ">=18"
   },
   "bugs": "https://github.com/audiojs/encode/issues",
   "scripts": {
     "test": "node test.js"
   },
-  "audio": "./audio.js"
+  "audio": "./audio.js",
+  "sideEffects": false
 }

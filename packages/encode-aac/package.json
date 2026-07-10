@@ -48,5 +48,6 @@
   "scripts": {
     "test": "node test.js"
   },
-  "audio": "./audio.js"
+  "audio": "./audio.js",
+  "sideEffects": false
 }
