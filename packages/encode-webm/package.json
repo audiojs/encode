@@ -1,18 +1,20 @@
 {
   "name": "@audio/encode-webm",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Encode PCM audio samples to WebM (Opus) via WASM",
   "type": "module",
   "main": "webm-encode.js",
   "types": "webm-encode.d.ts",
   "exports": {
     ".": "./webm-encode.js",
+    "./audio": "./audio.js",
     "./package.json": "./package.json"
   },
   "files": [
     "webm-encode.js",
     "webm-encode.d.ts",
-    "LICENSE"
+    "LICENSE",
+    "audio.js"
   ],
   "keywords": [
     "webm",
@@ -44,5 +46,6 @@
   },
   "scripts": {
     "test": "node test.js"
-  }
+  },
+  "audio": "./audio.js"
 }

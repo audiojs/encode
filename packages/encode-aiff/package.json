@@ -1,6 +1,6 @@
 {
   "name": "@audio/encode-aiff",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "description": "Encode PCM audio samples to AIFF format",
   "type": "module",
   "main": "aiff-encode.js",
@@ -8,13 +8,15 @@
   "exports": {
     ".": "./aiff-encode.js",
     "./meta": "./meta.js",
+    "./audio": "./audio.js",
     "./package.json": "./package.json"
   },
   "files": [
     "aiff-encode.js",
     "aiff-encode.d.ts",
     "meta.js",
-    "LICENSE"
+    "LICENSE",
+    "audio.js"
   ],
   "keywords": [
     "aiff",
@@ -40,5 +42,6 @@
   "bugs": "https://github.com/audiojs/encode/issues",
   "scripts": {
     "test": "node test.js"
-  }
+  },
+  "audio": "./audio.js"
 }

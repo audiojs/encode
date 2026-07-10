@@ -1,18 +1,20 @@
 {
   "name": "@audio/encode-aac",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Encode PCM audio samples to AAC (ADTS) via WebCodecs",
   "type": "module",
   "main": "aac-encode.js",
   "types": "aac-encode.d.ts",
   "exports": {
     ".": "./aac-encode.js",
+    "./audio": "./audio.js",
     "./package.json": "./package.json"
   },
   "files": [
     "aac-encode.js",
     "aac-encode.d.ts",
-    "LICENSE"
+    "LICENSE",
+    "audio.js"
   ],
   "keywords": [
     "aac",
@@ -41,5 +43,6 @@
   "bugs": "https://github.com/audiojs/encode/issues",
   "scripts": {
     "test": "node test.js"
-  }
+  },
+  "audio": "./audio.js"
 }

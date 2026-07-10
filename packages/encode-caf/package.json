@@ -1,18 +1,20 @@
 {
   "name": "@audio/encode-caf",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Encode PCM audio samples to CAF (Core Audio Format) LPCM",
   "type": "module",
   "main": "caf-encode.js",
   "types": "caf-encode.d.ts",
   "exports": {
     ".": "./caf-encode.js",
+    "./audio": "./audio.js",
     "./package.json": "./package.json"
   },
   "files": [
     "caf-encode.js",
     "caf-encode.d.ts",
-    "LICENSE"
+    "LICENSE",
+    "audio.js"
   ],
   "keywords": [
     "caf",
@@ -40,5 +42,6 @@
   "bugs": "https://github.com/audiojs/encode/issues",
   "scripts": {
     "test": "node test.js"
-  }
+  },
+  "audio": "./audio.js"
 }
