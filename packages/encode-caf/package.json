@@ -1,6 +1,6 @@
 {
   "name": "@audio/encode-caf",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Encode PCM audio samples to CAF (Core Audio Format) LPCM",
   "type": "module",
   "main": "caf-encode.js",

@@ -1,6 +1,6 @@
 {
   "name": "@audio/encode-aiff",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Encode PCM audio samples to AIFF format",
   "type": "module",
   "main": "aiff-encode.js",

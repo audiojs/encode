@@ -1,6 +1,6 @@
 {
   "name": "@audio/encode-aac",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Encode PCM audio samples to AAC (ADTS) via WebCodecs",
   "type": "module",
   "main": "aac-encode.js",
