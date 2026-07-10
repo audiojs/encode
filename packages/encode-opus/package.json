@@ -7,14 +7,18 @@
   "types": "opus-encode.d.ts",
   "exports": {
     ".": "./opus-encode.js",
-    "./audio": "./audio.js",
+    "./audio": {
+      "types": "./audio.d.ts",
+      "default": "./audio.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
     "opus-encode.js",
     "opus-encode.d.ts",
     "LICENSE",
-    "audio.js"
+    "audio.js",
+    "audio.d.ts"
   ],
   "keywords": [
     "opus",

@@ -7,14 +7,18 @@
   "types": "aac-encode.d.ts",
   "exports": {
     ".": "./aac-encode.js",
-    "./audio": "./audio.js",
+    "./audio": {
+      "types": "./audio.d.ts",
+      "default": "./audio.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
     "aac-encode.js",
     "aac-encode.d.ts",
     "LICENSE",
-    "audio.js"
+    "audio.js",
+    "audio.d.ts"
   ],
   "keywords": [
     "aac",

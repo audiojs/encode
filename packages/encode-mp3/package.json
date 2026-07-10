@@ -8,7 +8,10 @@
   "exports": {
     ".": "./mp3-encode.js",
     "./meta": "./meta.js",
-    "./audio": "./audio.js",
+    "./audio": {
+      "types": "./audio.d.ts",
+      "default": "./audio.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
@@ -16,7 +19,8 @@
     "mp3-encode.d.ts",
     "meta.js",
     "LICENSE",
-    "audio.js"
+    "audio.js",
+    "audio.d.ts"
   ],
   "keywords": [
     "mp3",

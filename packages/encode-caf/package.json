@@ -7,14 +7,18 @@
   "types": "caf-encode.d.ts",
   "exports": {
     ".": "./caf-encode.js",
-    "./audio": "./audio.js",
+    "./audio": {
+      "types": "./audio.d.ts",
+      "default": "./audio.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
     "caf-encode.js",
     "caf-encode.d.ts",
     "LICENSE",
-    "audio.js"
+    "audio.js",
+    "audio.d.ts"
   ],
   "keywords": [
     "caf",

@@ -7,14 +7,18 @@
   "types": "webm-encode.d.ts",
   "exports": {
     ".": "./webm-encode.js",
-    "./audio": "./audio.js",
+    "./audio": {
+      "types": "./audio.d.ts",
+      "default": "./audio.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [
     "webm-encode.js",
     "webm-encode.d.ts",
     "LICENSE",
-    "audio.js"
+    "audio.js",
+    "audio.d.ts"
   ],
   "keywords": [
     "webm",
