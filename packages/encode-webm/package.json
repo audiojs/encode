@@ -1,6 +1,6 @@
 {
   "name": "@audio/encode-webm",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Encode PCM audio samples to WebM (Opus) via WASM",
   "type": "module",
   "main": "webm-encode.js",
@@ -52,5 +52,6 @@
     "test": "node test.js"
   },
   "audio": "./audio.js",
-  "sideEffects": false
+  "sideEffects": false,
+  "funding": "https://github.com/sponsors/audiojs"
 }

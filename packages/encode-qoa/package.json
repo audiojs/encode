@@ -1,6 +1,6 @@
 {
   "name": "@audio/encode-qoa",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Encode PCM audio samples to QOA (Quite OK Audio) format",
   "type": "module",
   "main": "qoa-encode.js",
@@ -50,5 +50,6 @@
     "test": "node test.js"
   },
   "audio": "./audio.js",
-  "sideEffects": false
+  "sideEffects": false,
+  "funding": "https://github.com/sponsors/audiojs"
 }

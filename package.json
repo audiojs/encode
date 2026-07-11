@@ -1,6 +1,6 @@
 {
   "name": "@audio/encode",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "Encode audio data in node or browser",
   "type": "module",
   "sideEffects": false,
@@ -86,5 +86,6 @@
   },
   "engines": {
     "node": ">=18"
-  }
+  },
+  "funding": "https://github.com/sponsors/audiojs"
 }
