@@ -251,8 +251,8 @@ t('formats list + mime map', async () => {
 })
 
 t('webm round-trip: sample-exact length (DiscardPadding) and > 20 dB SNR', async () => {
-	let src = sine(48000, 440, 0.7) // 33600 samples: not a frame multiple
-	let buf = await encode.webm(src, { sampleRate: 48000, bitrate: 96 })
+	let [src] = sine(48000, 440, 0.7) // 33600 samples: not a frame multiple
+	let buf = await encode.webm([src], { sampleRate: 48000, bitrate: 96 })
 	let { channelData, sampleRate } = await decode(buf)
 	is(sampleRate, 48000)
 	is(channelData[0].length, src.length, 'decoded length equals input')
