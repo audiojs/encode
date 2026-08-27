@@ -29,13 +29,15 @@ export default async function webm(opts) {
 	// buffered interleaved float PCM at 48kHz
 	let pcmBuf = new Float32Array(0)
 	let headerSent = false
-	let totalSamples = 0 // total encoded frames (at 48kHz)
+	let totalSamples = 0 // samples encoded so far (48 kHz)
+	let inputTotal = 0   // input samples received (48 kHz)
 
 	return { encode: encodeChunk, flush, free }
 
 	function encodeChunk(channels) {
 		if (!enc) throw Error('Encoder already freed')
 		let resampled = toOpusRate(channels, rate)
+		inputTotal += resampled.length / nch
 
 		// append to PCM buffer
 		let prev = pcmBuf
@@ -93,7 +95,9 @@ export default async function webm(opts) {
 			packets.push({ ms, data: packet })
 		}
 
-		parts.push(buildCluster(packets))
+		// DiscardPadding on the last block trims the padding + pushed-out delay (Matroska §Block Structure)
+		let discard = Math.max(0, totalSamples - PRE_SKIP - inputTotal)
+		parts.push(buildCluster(packets, Math.round(discard * 1e9 / OPUS_RATE)))
 		free()
 		return concat(parts)
 	}
@@ -125,6 +129,12 @@ export default async function webm(opts) {
 	// build EBML container with unknown size (for streaming)
 	function elUnknown(idBytes) {
 		return concat([idBytes, new Uint8Array([0xFF])])
+	}
+
+	// signed big-endian integer, minimal bytes (non-negative values only)
+	function sint(v) {
+		let b = uint(v)
+		return b[0] & 0x80 ? concat([new Uint8Array([0]), b]) : b
 	}
 
 	// 8-byte big-endian IEEE 754 double
@@ -247,10 +257,13 @@ export default async function webm(opts) {
 		])
 	}
 
-	function buildCluster(packets) {
+	function buildCluster(packets, discardNs = 0) {
 		let ID_CLUSTER    = new Uint8Array([0x1F, 0x43, 0xB6, 0x75])
 		let ID_TIMECODE   = new Uint8Array([0xE7])
 		let ID_SIMPLEBLK  = new Uint8Array([0xA3])
+		let ID_BLOCKGROUP = new Uint8Array([0xA0])
+		let ID_BLOCK      = new Uint8Array([0xA1])
+		let ID_DISCARD    = new Uint8Array([0x75, 0xA2])
 
 		let clusterMs = packets[0].ms
 
@@ -259,17 +272,19 @@ export default async function webm(opts) {
 			elem(ID_TIMECODE, uint(clusterMs)),
 		]
 
-		for (let { ms, data } of packets) {
+		packets.forEach(({ ms, data }, i) => {
 			let relMs = ms - clusterMs
-			// SimpleBlock body: track vint (0x81 = track 1) + Int16BE timecode + flags (0x80=keyframe) + opus data
+			let last = discardNs > 0 && i === packets.length - 1
+			// Block body: track vint (0x81 = track 1) + Int16BE timecode + flags (SimpleBlock: 0x80 keyframe) + opus data
 			let body = concat([
 				new Uint8Array([0x81]),
 				i16be(relMs),
-				new Uint8Array([0x80]),
+				new Uint8Array([last ? 0x00 : 0x80]),
 				data,
 			])
-			parts.push(elem(ID_SIMPLEBLK, body))
-		}
+			// the final packet goes in a BlockGroup so DiscardPadding can trim it
+			parts.push(last ? elem(ID_BLOCKGROUP, concat([elem(ID_BLOCK, body), elem(ID_DISCARD, sint(discardNs))])) : elem(ID_SIMPLEBLK, body))
+		})
 
 		return concat(parts)
 	}

@@ -1,6 +1,6 @@
 import t, { is, ok } from 'tst'
 import opus from './opus-encode.js'
-import decode from 'audio-decode'
+import decode from '@audio/decode'
 
 function sine(rate, freq, dur) {
 	let n = Math.round(rate * dur), d = new Float32Array(n)

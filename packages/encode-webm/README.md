@@ -43,3 +43,5 @@ encoder.free();
 [MIT](LICENSE)
 
 <a href="https://github.com/krishnized/license/">ॐ</a>
+
+The final block is written in a BlockGroup with `DiscardPadding`, so decoders that honour it (@audio/decode-webm, ffmpeg, browsers) return exactly as many samples as were encoded.

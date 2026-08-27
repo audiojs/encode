@@ -134,3 +134,17 @@ t('webm doctype in EBML header', async () => {
 
 	ok(findStr(buf, 'webm') >= 0, 'DocType "webm" present in EBML header')
 })
+
+t('last block carries DiscardPadding in a BlockGroup', async () => {
+	let enc = await webm({ sampleRate: 48000, channels: 1 })
+	let buf = concatAll([enc.encode([sine(48000, 440, 0.7)]), enc.flush()]) // 33600 samples: not a frame multiple
+	let group = findBytes(buf, new Uint8Array([0xA0]))
+	ok(group > 0, 'BlockGroup present')
+	ok(findBytes(buf.subarray(group), new Uint8Array([0x75, 0xA2])) > 0, 'DiscardPadding element present')
+})
+
+function concatAll(parts) {
+	let len = parts.reduce((n, p) => n + p.length, 0), out = new Uint8Array(len), off = 0
+	for (let p of parts) { out.set(p, off); off += p.length }
+	return out
+}

@@ -1,7 +1,7 @@
 import t, { is, ok, almost } from 'tst'
 import encode, { formats, mime } from './audio-encode.js'
 import { aiff as aiffMeta, ogg as oggMeta } from './meta.js'
-import decode from 'audio-decode'
+import decode from '@audio/decode'
 import AudioBuffer from 'audio-buffer'
 
 function rms(arr) {
@@ -248,4 +248,15 @@ t('formats list + mime map', async () => {
 	is(formats.length, 10, '10 formats')
 	is(mime.webm, 'audio/webm')
 	is(encode.formats, formats, 'exposed on encode too')
+})
+
+t('webm round-trip: sample-exact length (DiscardPadding) and > 20 dB SNR', async () => {
+	let src = sine(48000, 440, 0.7) // 33600 samples: not a frame multiple
+	let buf = await encode.webm(src, { sampleRate: 48000, bitrate: 96 })
+	let { channelData, sampleRate } = await decode(buf)
+	is(sampleRate, 48000)
+	is(channelData[0].length, src.length, 'decoded length equals input')
+	let best = -Infinity
+	for (let lag = 0; lag <= 8; lag++) { let e = 0, s = 0; for (let i = 200; i < src.length - 200; i++) { let d = src[i] - channelData[0][i + lag]; e += d * d; s += src[i] * src[i] } best = Math.max(best, 10 * Math.log10(s / e)) }
+	ok(best > 20, 'SNR ' + best.toFixed(1) + ' dB')
 })
