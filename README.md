@@ -19,8 +19,8 @@ const buf = await encode.wav(channelData, { sampleRate: 44100 });
 | WAV | [@audio/encode-wav](https://npmjs.com/package/@audio/encode-wav) | JS |
 | MP3 | [@audio/encode-mp3](https://npmjs.com/package/@audio/encode-mp3) | WASM |
 | OGG Vorbis | [@audio/encode-ogg](https://npmjs.com/package/@audio/encode-ogg) | WASM |
-| Opus | [@audio/encode-opus](https://npmjs.com/package/@audio/encode-opus) | WASM |
-| WebM | [@audio/encode-webm](https://npmjs.com/package/@audio/encode-webm) | WASM (Opus) |
+| Opus | [@audio/encode-opus](https://npmjs.com/package/@audio/encode-opus) | WASM (libopus, single file) |
+| WebM | [@audio/encode-webm](https://npmjs.com/package/@audio/encode-webm) | WASM (libopus, single file) |
 | FLAC | [@audio/encode-flac](https://npmjs.com/package/@audio/encode-flac) | WASM |
 | AAC | [@audio/encode-aac](https://npmjs.com/package/@audio/encode-aac) | WebCodecs* |
 | AIFF | [@audio/encode-aiff](https://npmjs.com/package/@audio/encode-aiff) | JS |

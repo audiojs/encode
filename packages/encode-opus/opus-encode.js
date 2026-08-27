@@ -1,154 +1,106 @@
 /**
- * Ogg Opus encoder — browser + Node
- * Uses opusscript (libopus 1.4 WASM) for Opus frame encoding,
- * with a built-in minimal Ogg muxer (RFC 7845).
- *
- * npm install opusscript
+ * Ogg Opus encoder — libopus WASM (single-file module, host-neutral) + minimal Ogg muxer (RFC 7845).
  *
  * @param {Object} opts
- * @param {number} opts.sampleRate - input sample rate (any rate; internally resampled to 48kHz)
+ * @param {number} opts.sampleRate - input sample rate (any rate; resampled to 48 kHz)
  * @param {number} [opts.channels=1] - 1 or 2
  * @param {number} [opts.bitrate=64] - kbps
- * @param {string} [opts.application='audio'] - 'voip', 'audio', or 'lowdelay'
+ * @param {string} [opts.application='audio'] - 'audio', 'voip', or 'lowdelay'
+ * @param {number} [opts.complexity=10] - 0-10, libopus encoder effort
  * @param {object} [opts.meta] - VorbisComment tags (title, artist, …) baked into OpusTags
  * @returns {{ encode, flush, free }}
  *
  * encode(channels: Float32Array[]) -> Uint8Array (Ogg pages for this chunk)
- * flush() -> Uint8Array (complete Ogg Opus file)
+ * flush() -> Uint8Array (remaining pages + EOS)
  * free() -> void
  */
+import { createOpusEncoder, toOpusRate, FRAME } from './core.js'
+
 export default async function opus(opts) {
-	let mod = await import('opusscript')
-	let OpusScript = mod.default || mod
 	let rate = opts.sampleRate
+	if (!rate) throw Error('sampleRate is required')
 	let nch = opts.channels || 1
-	let bitrate = (opts.bitrate || 64) * 1000
-	let app = opts.application || 'audio'
-
-	let appConst = app === 'voip' ? OpusScript.Application.VOIP
-		: app === 'lowdelay' ? OpusScript.Application.RESTRICTED_LOWDELAY
-		: OpusScript.Application.AUDIO
-
-	let OPUS_RATE = 48000
-	let FRAME_SIZE = 960 // 20ms at 48kHz
-	let ratio = OPUS_RATE / rate
-
-	let enc = new OpusScript(OPUS_RATE, nch, appConst)
-	enc.setBitrate(bitrate)
+	let enc = await createOpusEncoder({ channels: nch, bitrate: opts.bitrate, application: opts.application, complexity: opts.complexity })
+	let preSkip = enc.lookahead
 
 	let serial = (Math.random() * 0xFFFFFFFF) >>> 0
 	let pageSeq = 0
-	let granule = 0
-	let PRE_SKIP = 3840 // 80ms encoder delay (RFC 7845)
-
-	// buffered interleaved Int16 PCM at 48kHz
-	let pcmBuf = new Int16Array(0)
+	let granule = 0      // samples encoded so far (48 kHz)
+	let total = 0        // input samples received (48 kHz)
+	let pcm = new Float32Array(0) // pending interleaved 48 kHz samples
 	let headerSent = false
 
-	// header pages (BOS + tags). Metadata is baked into OpusTags here — no buffering.
+	// header pages (BOS + tags). Metadata is baked into OpusTags — no buffering.
 	let headerPages = [
-		oggPage(opusHead(nch, PRE_SKIP, rate), serial, pageSeq++, 0n, 0x02),
-		oggPage(opusTags(metaToComments(opts.meta)), serial, pageSeq++, 0n, 0x00)
+		oggPage(opusHead(nch, preSkip, rate), serial, pageSeq++, 0, 0x02),
+		oggPage(opusTags(metaToComments(opts.meta)), serial, pageSeq++, 0, 0x00)
 	]
 
 	return { encode: encodeChunk, flush, free }
 
 	function encodeChunk(channels) {
-		let len = channels[0].length
-		let outLen = Math.round(len * ratio)
-		let resampled = new Int16Array(outLen * nch)
+		if (!enc) throw Error('Encoder already freed')
+		let next = toOpusRate(channels, rate)
+		total += next.length / nch
+		if (pcm.length) { let joined = new Float32Array(pcm.length + next.length); joined.set(pcm); joined.set(next, pcm.length); next = joined }
+		pcm = next
 
-		for (let i = 0; i < outLen; i++) {
-			let srcF = i / ratio
-			for (let c = 0; c < nch; c++) {
-				let s = ratio === 1 ? channels[c][i] : lanczos(channels[c], srcF, len)
-				s = s < -1 ? -1 : s > 1 ? 1 : s
-				resampled[i * nch + c] = Math.round(s * 0x7FFF)
-			}
+		let pages = headers()
+		let frameLen = FRAME * nch, pos = 0
+		while (pcm.length - pos >= frameLen) {
+			pages.push(page(pcm.subarray(pos, pos + frameLen), 0x00))
+			pos += frameLen
 		}
-
-		// append to PCM buffer
-		let prev = pcmBuf
-		pcmBuf = new Int16Array(prev.length + resampled.length)
-		pcmBuf.set(prev)
-		pcmBuf.set(resampled, prev.length)
-
-		// encode full frames
-		let frameSamples = FRAME_SIZE * nch
-		let pages = []
-
-		// prepend headers on first call
-		if (!headerSent) {
-			pages.push(...headerPages)
-			headerSent = true
-		}
-
-		while (pcmBuf.length >= frameSamples) {
-			let frame = pcmBuf.slice(0, frameSamples)
-			pcmBuf = pcmBuf.slice(frameSamples)
-
-			let buf = i16toU8(frame)
-			let packet = enc.encode(buf, FRAME_SIZE)
-			granule += FRAME_SIZE
-			pages.push(oggPage(packet, serial, pageSeq++, BigInt(granule), 0x00))
-		}
-
+		pcm = pcm.subarray(pos).slice()
 		return concat(pages)
 	}
 
 	function flush() {
-		let pages = []
-
-		// headers if encode() was never called
-		if (!headerSent) {
-			pages.push(...headerPages)
-			headerSent = true
+		if (!enc) throw Error('Encoder already freed')
+		let pages = headers()
+		// Pad so the encoder delay (pre-skip) is pushed out, then trim via the final granule (RFC 7845 §4.4).
+		let need = total + preSkip - granule
+		let frames = Math.max(1, Math.ceil(need / FRAME))
+		let padded = new Float32Array(frames * FRAME * nch)
+		padded.set(pcm)
+		pcm = new Float32Array(0)
+		for (let i = 0; i < frames; i++) {
+			let last = i === frames - 1
+			pages.push(page(padded.subarray(i * FRAME * nch, (i + 1) * FRAME * nch), last ? 0x04 : 0x00, last ? total + preSkip : 0))
 		}
-
-		// encode remaining (zero-padded)
-		let frameSamples = FRAME_SIZE * nch
-		if (pcmBuf.length > 0) {
-			let padded = new Int16Array(frameSamples)
-			padded.set(pcmBuf)
-			pcmBuf = new Int16Array(0)
-
-			let buf = i16toU8(padded)
-			let packet = enc.encode(buf, FRAME_SIZE)
-			granule += FRAME_SIZE
-			pages.push(oggPage(packet, serial, pageSeq++, BigInt(granule), 0x04))
-		} else {
-			// empty EOS page
-			pages.push(oggPage(new Uint8Array(0), serial, pageSeq++, BigInt(granule), 0x04))
-		}
-
+		free()
 		return concat(pages)
 	}
 
 	function free() {
-		if (enc) { enc.delete(); enc = null }
-		pcmBuf = null
+		if (!enc) return
+		enc.free()
+		enc = null
+		pcm = null
 		headerPages = null
 	}
-}
 
-// Int16Array -> Uint8Array (same underlying bytes)
-function i16toU8(i16) {
-	return new Uint8Array(i16.buffer, i16.byteOffset, i16.byteLength)
-}
-
-// Lanczos-3 windowed sinc interpolation
-function lanczos(ch, x, len) {
-	let a = 3, sum = 0, wsum = 0
-	let i0 = Math.floor(x) - a + 1
-	let i1 = Math.floor(x) + a
-	for (let i = i0; i <= i1; i++) {
-		let d = x - i
-		let w = d === 0 ? 1 : a * Math.sin(Math.PI * d) * Math.sin(Math.PI * d / a) / (Math.PI * Math.PI * d * d)
-		let idx = i < 0 ? 0 : i >= len ? len - 1 : i
-		sum += ch[idx] * w
-		wsum += w
+	function headers() {
+		if (headerSent) return []
+		headerSent = true
+		return headerPages
 	}
-	return wsum ? sum / wsum : 0
+
+	// encode one 20 ms frame → one Ogg page
+	function page(frame, flags, endGranule) {
+		let packet = enc.encode(frame)
+		granule += FRAME
+		return oggPage(packet, serial, pageSeq++, endGranule || granule, flags)
+	}
+}
+
+function concat(parts) {
+	if (parts.length === 1) return parts[0]
+	let len = 0
+	for (let p of parts) len += p.length
+	let out = new Uint8Array(len), off = 0
+	for (let p of parts) { out.set(p, off); off += p.length }
+	return out
 }
 
 
@@ -169,8 +121,8 @@ function oggPage(payload, serial, seq, granule, flags) {
 	page[5] = flags
 
 	// granule (int64 LE)
-	dv.setUint32(6, Number(granule & 0xFFFFFFFFn), true)
-	dv.setUint32(10, Number((granule >> 32n) & 0xFFFFFFFFn), true)
+	dv.setUint32(6, granule >>> 0, true)
+	dv.setUint32(10, Math.floor(granule / 0x100000000) >>> 0, true)
 
 	dv.setUint32(14, serial, true)
 	dv.setUint32(18, seq, true)
@@ -257,17 +209,6 @@ function oggCrc(data) {
 		}
 	}
 	let crc = 0
-	for (let i = 0; i < data.length; i++)
-		crc = ((crc << 8) ^ crcTbl[((crc >>> 24) ^ data[i]) & 0xFF]) >>> 0
-	return crc >>> 0
-}
-
-function concat(arrays) {
-	if (!arrays.length) return new Uint8Array(0)
-	if (arrays.length === 1) return arrays[0]
-	let n = 0
-	for (let a of arrays) n += a.length
-	let out = new Uint8Array(n), off = 0
-	for (let a of arrays) { out.set(a, off); off += a.length }
-	return out
+	for (let i = 0; i < data.length; i++) crc = ((crc << 8) ^ crcTbl[((crc >>> 24) ^ data[i]) & 0xFF]) >>> 0
+	return crc
 }

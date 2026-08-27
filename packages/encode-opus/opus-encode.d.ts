@@ -3,6 +3,10 @@ export interface OpusEncodeOptions {
 	channels?: number;
 	bitrate?: number;
 	application?: 'voip' | 'audio' | 'lowdelay';
+	/** libopus encoder effort 0-10 (default 10) */
+	complexity?: number;
+	/** VorbisComment tags baked into OpusTags */
+	meta?: Record<string, string | number>;
 }
 
 export interface StreamEncoder {

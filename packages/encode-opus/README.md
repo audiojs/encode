@@ -1,7 +1,7 @@
 # @audio/encode-opus
 
 Encode PCM audio samples to Ogg Opus format.<br>
-WASM (libopus via opusscript) with built-in Ogg muxer — works in both node and browser.
+libopus WASM (single-file module, no side files — loads from any CDN, Node, workers and AudioWorklets) with a built-in Ogg muxer.
 
 [![npm install @audio/encode-opus](https://nodei.co/npm/@audio/encode-opus.png?mini=true)](https://npmjs.org/package/@audio/encode-opus/)
 
@@ -22,6 +22,8 @@ const tail = encoder.flush();              // → Uint8Array (remaining + EOS)
 | `channels` | `1` | `1` (mono) or `2` (stereo) |
 | `bitrate` | `64` | Target bitrate in kbps |
 | `application` | `'audio'` | `'audio'`, `'voip'`, or `'lowdelay'` |
+| `complexity` | `10` | libopus encoder effort, 0-10 |
+| `meta` | — | VorbisComment tags (`title`, `artist`, …) written into OpusTags |
 
 Opus always encodes at 48kHz. If the input sample rate differs, Lanczos-3 resampling is applied automatically.
 
@@ -41,3 +43,17 @@ encoder.free();
 [MIT](LICENSE)
 
 <a href="https://github.com/krishnized/license/">ॐ</a>
+
+### Raw packets
+
+Container muxers build on the packet encoder directly (`@audio/encode-webm` does):
+
+```js
+import { createOpusEncoder, toOpusRate, FRAME } from '@audio/encode-opus/core'
+
+let enc = await createOpusEncoder({ channels: 2, bitrate: 96 })
+enc.lookahead                       // encoder delay in 48 kHz samples: Ogg pre-skip / Matroska CodecDelay
+let pcm = toOpusRate(channelData, 44100)   // interleaved 48 kHz float
+let packet = enc.encode(pcm.subarray(0, FRAME * 2))
+enc.free()
+```

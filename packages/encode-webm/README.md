@@ -1,7 +1,7 @@
 # @audio/encode-webm
 
 Encode PCM audio samples to WebM (Opus) format.<br>
-WASM (libopus via opusscript) with built-in EBML/Matroska muxer — works in both node and browser.
+WASM (libopus via libopus WASM via [@audio/encode-opus](../encode-opus)) with built-in EBML/Matroska muxer — works in both node and browser.
 
 [![npm install @audio/encode-webm](https://nodei.co/npm/@audio/encode-webm.png?mini=true)](https://npmjs.org/package/@audio/encode-webm/)
 

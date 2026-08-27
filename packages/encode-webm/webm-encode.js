@@ -1,9 +1,7 @@
 /**
  * WebM/Opus encoder — browser + Node
- * Uses opusscript (libopus 1.4 WASM) for Opus frame encoding,
+ * libopus WASM packet encoder from @audio/encode-opus/core,
  * with a built-in minimal EBML/Matroska muxer (WebM profile).
- *
- * npm install opusscript
  *
  * @param {Object} opts
  * @param {number} opts.sampleRate - input sample rate (any rate; internally resampled to 48kHz)
@@ -16,50 +14,32 @@
  * flush() -> Uint8Array (final cluster with remaining samples)
  * free() -> void
  */
-export default async function webm(opts) {
-	let mod = await import('opusscript')
-	let OpusScript = mod.default || mod
-	let rate = opts.sampleRate
-	let nch = opts.channels || 1
-	let bitrate = (opts.bitrate || 64) * 1000
-	let app = opts.application || 'audio'
+import { createOpusEncoder, toOpusRate, FRAME } from '@audio/encode-opus/core'
 
-	let appConst = app === 'voip' ? OpusScript.Application.VOIP
-		: app === 'lowdelay' ? OpusScript.Application.RESTRICTED_LOWDELAY
-		: OpusScript.Application.AUDIO
+export default async function webm(opts) {
+	let rate = opts.sampleRate
+	if (!rate) throw Error('sampleRate is required')
+	let nch = opts.channels || 1
+	let enc = await createOpusEncoder({ channels: nch, bitrate: opts.bitrate, application: opts.application, complexity: opts.complexity })
 
 	let OPUS_RATE = 48000
-	let FRAME_SIZE = 960 // 20ms at 48kHz
-	let ratio = OPUS_RATE / rate
-	let PRE_SKIP = 3840 // 80ms encoder delay
+	let FRAME_SIZE = FRAME
+	let PRE_SKIP = enc.lookahead // encoder delay in 48 kHz samples
 
-	let enc = new OpusScript(OPUS_RATE, nch, appConst)
-	enc.setBitrate(bitrate)
-
-	// buffered interleaved Int16 PCM at 48kHz
-	let pcmBuf = new Int16Array(0)
+	// buffered interleaved float PCM at 48kHz
+	let pcmBuf = new Float32Array(0)
 	let headerSent = false
 	let totalSamples = 0 // total encoded frames (at 48kHz)
 
 	return { encode: encodeChunk, flush, free }
 
 	function encodeChunk(channels) {
-		let len = channels[0].length
-		let outLen = Math.round(len * ratio)
-		let resampled = new Int16Array(outLen * nch)
-
-		for (let i = 0; i < outLen; i++) {
-			let srcF = i / ratio
-			for (let c = 0; c < nch; c++) {
-				let s = ratio === 1 ? channels[c][i] : lanczos(channels[c], srcF, len)
-				s = s < -1 ? -1 : s > 1 ? 1 : s
-				resampled[i * nch + c] = Math.round(s * 0x7FFF)
-			}
-		}
+		if (!enc) throw Error('Encoder already freed')
+		let resampled = toOpusRate(channels, rate)
 
 		// append to PCM buffer
 		let prev = pcmBuf
-		pcmBuf = new Int16Array(prev.length + resampled.length)
+		pcmBuf = new Float32Array(prev.length + resampled.length)
 		pcmBuf.set(prev)
 		pcmBuf.set(resampled, prev.length)
 
@@ -79,8 +59,7 @@ export default async function webm(opts) {
 			let frame = pcmBuf.slice(0, frameSamples)
 			pcmBuf = pcmBuf.slice(frameSamples)
 
-			let buf = i16toU8(frame)
-			let packet = enc.encode(buf, FRAME_SIZE)
+			let packet = enc.encode(frame)
 			let ms = Math.round(totalSamples / OPUS_RATE * 1000)
 			totalSamples += FRAME_SIZE
 			packets.push({ ms, data: packet })
@@ -102,25 +81,25 @@ export default async function webm(opts) {
 		let frameSamples = FRAME_SIZE * nch
 		let packets = []
 
-		if (pcmBuf.length > 0) {
-			let padded = new Int16Array(frameSamples)
-			padded.set(pcmBuf)
-			pcmBuf = new Int16Array(0)
-
-			let buf = i16toU8(padded)
-			let packet = enc.encode(buf, FRAME_SIZE)
+		// pad the remainder and push the encoder delay out (CodecDelay tells demuxers to skip it)
+		let frames = Math.max(1, Math.ceil((pcmBuf.length / nch + PRE_SKIP) / FRAME_SIZE))
+		let padded = new Float32Array(frames * frameSamples)
+		padded.set(pcmBuf)
+		pcmBuf = new Float32Array(0)
+		for (let i = 0; i < frames; i++) {
+			let packet = enc.encode(padded.subarray(i * frameSamples, (i + 1) * frameSamples))
 			let ms = Math.round(totalSamples / OPUS_RATE * 1000)
 			totalSamples += FRAME_SIZE
 			packets.push({ ms, data: packet })
 		}
 
-		if (packets.length > 0) parts.push(buildCluster(packets))
-
+		parts.push(buildCluster(packets))
+		free()
 		return concat(parts)
 	}
 
 	function free() {
-		if (enc) { enc.delete(); enc = null }
+		if (enc) { enc.free(); enc = null }
 		pcmBuf = null
 	}
 
@@ -220,8 +199,8 @@ export default async function webm(opts) {
 
 		let app = str('audio-encode')
 		let codecPrivate = opusHead(nch, PRE_SKIP, rate)
-		let codecDelay = uint(80000000) // 3840 * 1e9 / 48000 ns
-		let seekPreRoll = uint(80000000)
+		let codecDelay = uint(Math.round(PRE_SKIP * 1e9 / OPUS_RATE)) // ns
+		let seekPreRoll = uint(80000000) // 80 ms, RFC 7845 §4.2
 
 		// Audio sub-element
 		let audioBody = concat([
@@ -316,25 +295,6 @@ function set8(buf, off, s) {
 }
 
 // Int16Array -> Uint8Array (same underlying bytes)
-function i16toU8(i16) {
-	return new Uint8Array(i16.buffer, i16.byteOffset, i16.byteLength)
-}
-
-// Lanczos-3 windowed sinc interpolation
-function lanczos(ch, x, len) {
-	let a = 3, sum = 0, wsum = 0
-	let i0 = Math.floor(x) - a + 1
-	let i1 = Math.floor(x) + a
-	for (let i = i0; i <= i1; i++) {
-		let d = x - i
-		let w = d === 0 ? 1 : a * Math.sin(Math.PI * d) * Math.sin(Math.PI * d / a) / (Math.PI * Math.PI * d * d)
-		let idx = i < 0 ? 0 : i >= len ? len - 1 : i
-		sum += ch[idx] * w
-		wsum += w
-	}
-	return wsum ? sum / wsum : 0
-}
-
 function concat(arrays) {
 	if (!arrays.length) return new Uint8Array(0)
 	if (arrays.length === 1) return arrays[0]
