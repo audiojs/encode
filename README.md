@@ -1,5 +1,7 @@
 # @audio/encode [![test](https://github.com/audiojs/encode/actions/workflows/test.js.yml/badge.svg)](https://github.com/audiojs/encode/actions/workflows/test.js.yml)
 
+Try it in the browser: [Audio converter](https://audiojs.dev/util/convert-audio/), [Audio recorder](https://audiojs.dev/util/recorder/). Runs on this package, nothing is uploaded.
+
 Encode raw audio samples to any format.<br>
 JS / WASM – no ffmpeg, no native bindings, works in both node and browser.<br>
 Small API, minimal size, near-native performance, stream encoding.

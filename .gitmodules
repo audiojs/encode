@@ -1,3 +1,6 @@
 [submodule "packages/encode-opus/lib/opus"]
 	path = packages/encode-opus/lib/opus
 	url = https://github.com/xiph/opus.git
+[submodule "packages/encode-alac/lib/alac"]
+	path = packages/encode-alac/lib/alac
+	url = https://github.com/macosforge/alac
