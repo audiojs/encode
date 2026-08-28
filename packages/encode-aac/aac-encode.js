@@ -38,15 +38,8 @@ export default async function aac(opts) {
 	let encoder = new AudioEncoder({
 		output(chunk, meta) {
 			if (!ascParsed && meta && meta.decoderConfig && meta.decoderConfig.description) {
-				let asc = new Uint8Array(meta.decoderConfig.description)
-				// AudioSpecificConfig: 5-bit audioObjectType, 4-bit samplingFrequencyIndex
-				// (if freqIdx==0xf then 24-bit rate follows, but mp4a.40.2 won't do that)
-				let aoType = (asc[0] >> 3) & 0x1F
-				let sfIdx  = ((asc[0] & 0x07) << 1) | ((asc[1] >> 7) & 0x01)
-				let chConf = (asc[1] >> 3) & 0x0F
-				profile = aoType
-				freqIdx = sfIdx
-				nch     = chConf || nch
+				let cfg = parseAsc(new Uint8Array(meta.decoderConfig.description))
+				if (cfg) { profile = cfg.profile; freqIdx = cfg.freqIdx; nch = cfg.channels || nch }
 				ascParsed = true
 			}
 			let payload = new Uint8Array(chunk.byteLength)
@@ -114,6 +107,34 @@ export default async function aac(opts) {
 		queue = []
 		return concat(frames)
 	}
+}
+
+/**
+ * Read audioObjectType / samplingFrequencyIndex / channelConfiguration from a decoderConfig.description.
+ * Chromium passes the bare 2-byte AudioSpecificConfig; WebKit passes the whole MPEG-4 ES_Descriptor
+ * (tag 0x03 → DecoderConfigDescriptor 0x04 → DecoderSpecificInfo 0x05, which holds the ASC).
+ * Returns null when nothing sane is found, so the configured values stay in force.
+ */
+export function parseAsc(d) {
+	let asc = d
+	if (d.length > 2 && d[0] === 0x03) {
+		let off = 0
+		while (off < d.length - 1) {
+			let tag = d[off++], len = 0, b
+			do { b = d[off++]; len = (len << 7) | (b & 0x7f) } while (b & 0x80 && off < d.length)
+			if (tag === 0x03) off += 3           // ES_ID(2) + flags(1), then nested descriptors
+			else if (tag === 0x04) off += 13     // objectTypeIndication … avgBitrate, then nested DecoderSpecificInfo
+			else if (tag === 0x05) { asc = d.subarray(off, off + len); break }
+			else off += len
+		}
+	}
+	if (asc.length < 2) return null
+	let aoType = (asc[0] >> 3) & 0x1F
+	let sfIdx = ((asc[0] & 0x07) << 1) | ((asc[1] >> 7) & 0x01)
+	let chConf = (asc[1] >> 3) & 0x0F
+	// LC/Main/SSR/LTP only; explicit 24-bit rates (index 15) and >8 channels are not ADTS material
+	if (aoType < 1 || aoType > 4 || sfIdx > 12 || chConf > 7) return null
+	return { profile: aoType, freqIdx: sfIdx, channels: chConf }
 }
 
 // --- ADTS header builder ---

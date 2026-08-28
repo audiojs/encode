@@ -4,3 +4,6 @@
 [submodule "packages/encode-alac/lib/alac"]
 	path = packages/encode-alac/lib/alac
 	url = https://github.com/macosforge/alac
+[submodule "packages/encode-wavpack/lib/wavpack"]
+	path = packages/encode-wavpack/lib/wavpack
+	url = https://github.com/dbry/WavPack.git
