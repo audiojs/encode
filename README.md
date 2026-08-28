@@ -28,6 +28,9 @@ const buf = await encode.wav(channelData, { sampleRate: 44100 });
 | AIFF | [@audio/encode-aiff](https://npmjs.com/package/@audio/encode-aiff) | JS |
 | CAF | [@audio/encode-caf](https://npmjs.com/package/@audio/encode-caf) | JS |
 | QOA | [@audio/encode-qoa](https://npmjs.com/package/@audio/encode-qoa) | JS |
+| WavPack (`wv`) | [@audio/encode-wavpack](https://npmjs.com/package/@audio/encode-wavpack) | WASM (libwavpack, single file) — lossless, hybrid lossy, 16/24/float, APEv2 tags |
+| M4A / MP4 (`m4a`, `mp4`) | [@audio/encode-mp4](https://npmjs.com/package/@audio/encode-mp4) | JS muxer — AAC (WebCodecs*), Opus, FLAC, MP3 or PCM in ISOBMFF, iTunes tags + chapters; `remux()` replaces or strips the audio track of an existing video without touching the video stream |
+| ALAC (`m4a` with `codec: 'alac'`) | [@audio/encode-alac](https://npmjs.com/package/@audio/encode-alac) | JS — Apple Lossless, port of Apple's reference encoder (Apache-2.0), bit-exact |
 
 <sub>* AAC uses the native [WebCodecs](https://developer.mozilla.org/en-US/docs/Web/API/AudioEncoder) `AudioEncoder` — browser-only (Chromium/Safari), throws in Node.</sub>
 

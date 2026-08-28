@@ -1,0 +1,91 @@
+{
+  "name": "@audio/encode-mp4",
+  "version": "1.0.0",
+  "description": "Encode PCM audio samples to MP4/M4A (ISO BMFF) — pure JS muxer, remuxer and iTunes-tag writer",
+  "type": "module",
+  "main": "mp4-encode.js",
+  "types": "mp4-encode.d.ts",
+  "exports": {
+    ".": {
+      "types": "./mp4-encode.d.ts",
+      "default": "./mp4-encode.js"
+    },
+    "./mux": {
+      "types": "./mux.d.ts",
+      "default": "./mux.js"
+    },
+    "./remux": {
+      "types": "./remux.d.ts",
+      "default": "./remux.js"
+    },
+    "./meta": "./meta.js",
+    "./audio": {
+      "types": "./audio.d.ts",
+      "default": "./audio.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "mp4-encode.js",
+    "mp4-encode.d.ts",
+    "mux.js",
+    "mux.d.ts",
+    "remux.js",
+    "remux.d.ts",
+    "meta.js",
+    "iso.js",
+    "tags.js",
+    "LICENSE",
+    "audio.js",
+    "audio.d.ts"
+  ],
+  "keywords": [
+    "mp4",
+    "m4a",
+    "mov",
+    "isobmff",
+    "aac",
+    "alac",
+    "opus",
+    "flac",
+    "audio",
+    "encode",
+    "encoder",
+    "mux",
+    "remux",
+    "codec"
+  ],
+  "dependencies": {
+    "@audio/encode-aac": "^1.1.2",
+    "@audio/encode-flac": "^1.2.2",
+    "@audio/encode-mp3": "^1.2.2",
+    "@audio/encode-opus": "^1.3.0"
+  },
+  "devDependencies": {
+    "@audio/decode": "^3.14.1",
+    "@audio/decode-aac": "^1.5.0",
+    "@audio/decode-mp4": "^1.1.0",
+    "tst": "^9.4.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT",
+  "author": "audiojs",
+  "homepage": "https://github.com/audiojs/encode/tree/main/packages/encode-mp4",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/audiojs/encode.git",
+    "directory": "packages/encode-mp4"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "bugs": "https://github.com/audiojs/encode/issues",
+  "scripts": {
+    "test": "node test.js"
+  },
+  "audio": "./audio.js",
+  "sideEffects": false,
+  "funding": "https://github.com/sponsors/audiojs"
+}

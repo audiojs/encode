@@ -1,0 +1,63 @@
+{
+  "name": "@audio/encode-wavpack",
+  "version": "1.0.0",
+  "description": "Encode PCM audio samples to WavPack (.wv) with libwavpack WASM",
+  "type": "module",
+  "main": "wavpack-encode.js",
+  "types": "wavpack-encode.d.ts",
+  "exports": {
+    ".": "./wavpack-encode.js",
+    "./audio": {
+      "types": "./audio.d.ts",
+      "default": "./audio.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "wavpack-encode.js",
+    "wavpack-encode.d.ts",
+    "src/wavpack.wasm.js",
+    "LICENSE",
+    "LICENSE.wavpack",
+    "audio.js",
+    "audio.d.ts"
+  ],
+  "keywords": [
+    "wavpack",
+    "wv",
+    "hybrid",
+    "lossless",
+    "audio",
+    "encode",
+    "encoder",
+    "wasm",
+    "libwavpack"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "BSD-3-Clause",
+  "author": "audiojs",
+  "homepage": "https://github.com/audiojs/encode/tree/main/packages/encode-wavpack",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/audiojs/encode.git",
+    "directory": "packages/encode-wavpack"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "bugs": "https://github.com/audiojs/encode/issues",
+  "scripts": {
+    "build": "bash build.sh",
+    "prepack": "npm run build",
+    "test": "node test.js"
+  },
+  "devDependencies": {
+    "tst": "^9.4.0",
+    "@audio/decode-wavpack": "^1.0.0"
+  },
+  "audio": "./audio.js",
+  "sideEffects": false,
+  "funding": "https://github.com/sponsors/audiojs"
+}

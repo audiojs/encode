@@ -1,0 +1,73 @@
+{
+  "name": "@audio/encode-alac",
+  "version": "1.0.0",
+  "description": "Encode PCM audio to Apple Lossless (ALAC) — pure JS port of Apple's reference encoder",
+  "type": "module",
+  "sideEffects": false,
+  "main": "alac-encode.js",
+  "types": "./alac-encode.d.ts",
+  "exports": {
+    ".": {
+      "types": "./alac-encode.d.ts",
+      "default": "./alac-encode.js"
+    },
+    "./core": {
+      "types": "./core.d.ts",
+      "default": "./core.js"
+    },
+    "./audio": {
+      "types": "./audio.d.ts",
+      "default": "./audio.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "core.js",
+    "core.d.ts",
+    "alac-encode.js",
+    "alac-encode.d.ts",
+    "encoder.js",
+    "ag.js",
+    "dp.js",
+    "matrix.js",
+    "audio.js",
+    "audio.d.ts",
+    "LICENSE",
+    "LICENSE.alac"
+  ],
+  "audio": "./audio.js",
+  "dependencies": {
+    "@audio/encode-mp4": "^1.0.0"
+  },
+  "devDependencies": {
+    "tst": "^9.4.0"
+  },
+  "scripts": {
+    "test": "node test.js"
+  },
+  "keywords": [
+    "audio",
+    "alac",
+    "apple-lossless",
+    "lossless",
+    "codec",
+    "encode",
+    "encoder",
+    "m4a",
+    "mp4"
+  ],
+  "license": "Apache-2.0",
+  "author": "Dmitry Iv. <dfcreative@gmail.com>",
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/audiojs/encode.git",
+    "directory": "packages/encode-alac"
+  },
+  "funding": "https://github.com/sponsors/audiojs"
+}

@@ -61,9 +61,9 @@ const META_WRITERS = {
 	ogg: () => import('@audio/encode-ogg/meta').then(m => m.writeMeta),
 }
 
-// Formats that bake metadata into the encoder itself (Ogg OpusTags) — streamed,
+// Formats that bake metadata into the encoder itself (Ogg OpusTags, WavPack APEv2, MP4 ilst) — streamed,
 // never buffered. The rest splice meta post-hoc via META_WRITERS on flush.
-const NATIVE_META = new Set(['opus'])
+const NATIVE_META = new Set(['opus', 'wv', 'm4a', 'mp4'])
 
 function reg(name, load) {
 	encode[name] = fmt(name, async (opts) => {
@@ -101,13 +101,26 @@ reg('opus', () => import('@audio/encode-opus'))
 reg('webm', () => import('@audio/encode-webm'))
 reg('aac', () => import('@audio/encode-aac'))
 reg('qoa', () => import('@audio/encode-qoa'))
+reg('wv', () => import('@audio/encode-wavpack'))
+// M4A / MP4 container: AAC (browser WebCodecs), Opus, FLAC, MP3, PCM via @audio/encode-mp4;
+// `codec: 'alac'` routes to the pure-JS Apple Lossless encoder, which muxes through the same package.
+// Both write iTunes tags (`meta`) and chapters themselves — no post-splice writer.
+reg('m4a', () => import('@audio/encode-mp4'))
+reg('mp4', () => import('@audio/encode-mp4'))
+for (let name of ['m4a', 'mp4']) {
+	let container = encode[name]
+	encode[name] = (data, opts) => (opts ?? data)?.codec === 'alac'
+		? fmt(name, async o => { let init = (await import('@audio/encode-alac')).default; let c = await init(o); return streamEncoder(ch => c.encode(ch), () => c.flush(), () => c.free()) })(data, opts)
+		: container(data, opts)
+}
 
 // Supported format names and their MIME types — for format-agnostic pipelines.
-export const formats = ['wav', 'aiff', 'caf', 'mp3', 'ogg', 'flac', 'opus', 'webm', 'aac', 'qoa']
+export const formats = ['wav', 'aiff', 'caf', 'mp3', 'ogg', 'flac', 'opus', 'webm', 'aac', 'qoa', 'wv', 'm4a', 'mp4']
 export const mime = {
 	wav: 'audio/wav', aiff: 'audio/aiff', caf: 'audio/x-caf',
 	mp3: 'audio/mpeg', ogg: 'audio/ogg', flac: 'audio/flac',
 	opus: 'audio/ogg', webm: 'audio/webm', aac: 'audio/aac', qoa: 'audio/qoa',
+	wv: 'audio/wavpack', m4a: 'audio/mp4', mp4: 'audio/mp4',
 }
 encode.formats = formats
 encode.mime = mime

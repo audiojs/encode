@@ -245,7 +245,7 @@ t('ogg meta — VorbisComment rewrite preserves audio', async () => {
 
 t('formats list + mime map', async () => {
 	ok(formats.includes('webm') && formats.includes('qoa') && formats.includes('caf') && formats.includes('aac'), 'new formats listed')
-	is(formats.length, 10, '10 formats')
+	is(formats.length, 13, '13 formats')
 	is(mime.webm, 'audio/webm')
 	is(encode.formats, formats, 'exposed on encode too')
 })
@@ -259,4 +259,35 @@ t('webm round-trip: sample-exact length (DiscardPadding) and > 20 dB SNR', async
 	let best = -Infinity
 	for (let lag = 0; lag <= 8; lag++) { let e = 0, s = 0; for (let i = 200; i < src.length - 200; i++) { let d = src[i] - channelData[0][i + lag]; e += d * d; s += src[i] * src[i] } best = Math.max(best, 10 * Math.log10(s / e)) }
 	ok(best > 20, 'SNR ' + best.toFixed(1) + ' dB')
+})
+
+// --- 2026-08 formats: WavPack, M4A container (FLAC/Opus/ALAC inside), tags carried natively ---
+
+t('wv round-trip (lossless, APEv2 tags)', async () => {
+	let { channelData, sampleRate } = await getLena()
+	let buf = await encode.wv(channelData, { sampleRate, meta: { title: 'Lena', artist: 'audiojs' } })
+	ok(has(buf, 'wvpk') && has(buf, 'APETAGEX') && has(buf, 'Lena'), 'WavPack blocks + APEv2 tag')
+	let dec = await (await import('@audio/decode-wavpack')).default(buf)   // the published umbrella decoder predates WavPack; use the atom directly
+	is(dec.sampleRate, sampleRate)
+	is(dec.channelData[0].length, channelData[0].length, 'sample-exact length')
+	let maxd = 0; for (let i = 0; i < channelData[0].length; i++) maxd = Math.max(maxd, Math.abs(dec.channelData[0][i] - channelData[0][i]))
+	ok(maxd < 1 / 32768, '16-bit lossless: max diff ' + maxd.toExponential(2))
+})
+
+t('m4a round-trip: default codec (FLAC in Node), alac, opus — tags in ilst', async () => {
+	let { channelData, sampleRate } = await getLena()
+	let { m4a } = await import('@audio/decode/meta')
+	for (let opts of [{}, { codec: 'alac' }, { codec: 'opus' }]) {
+		let buf = await encode.m4a(channelData, { sampleRate, ...opts, meta: { title: 'Lena ' + (opts.codec || 'flac'), artist: 'audiojs' } })
+		ok(has(buf, 'ftyp') && has(buf, 'moov') && has(buf, 'mdat'), 'ISOBMFF boxes')
+		is(m4a(buf)?.meta.title, 'Lena ' + (opts.codec || 'flac'), 'ilst title')
+		let dec = await decode(buf)
+		is(dec.channelData.length, channelData.length, 'channels')
+		if (opts.codec === 'opus') { is(dec.sampleRate, 48000); almost(rms(dec.channelData[0]), rms(channelData[0]), 0.02, 'rms within opus tolerance'); continue }
+		is(dec.sampleRate, sampleRate)
+		is(dec.channelData[0].length, channelData[0].length, 'sample-exact length')
+		let maxd = 0; for (let i = 0; i < channelData[0].length; i++) maxd = Math.max(maxd, Math.abs(dec.channelData[0][i] - channelData[0][i]))
+		ok(maxd < 1 / 32768, (opts.codec || 'flac') + ' lossless: max diff ' + maxd.toExponential(2))
+	}
+	is(encode.formats.includes('m4a') && encode.mime.m4a, 'audio/mp4', 'format registered')
 })
