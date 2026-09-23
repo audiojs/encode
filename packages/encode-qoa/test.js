@@ -1,6 +1,6 @@
 import t, { is, ok, almost } from 'tst'
 import qoa from './qoa-encode.js'
-import decode from 'audio-decode'
+import decode from '@audio/decode'
 
 function rms(arr) {
 	let sum = 0
