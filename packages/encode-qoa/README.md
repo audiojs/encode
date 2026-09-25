@@ -36,7 +36,7 @@ encoder.free();
 
 ### Streaming output
 
-Frames encode as 5120 samples fill, the LMS state carried across them (byte-identical to [qoa-format](https://github.com/mattdesl/qoa-format)'s whole-file encoder); whole-file mode keeps the encoded frames, not the PCM. `stream: true` emits them as they encode under a `samples: 0` header (QOA's streaming mode); after `flush()`, `head()` returns the 8-byte header with the sample count.
+Frames encode as 5120 samples fill, the LMS state carried across them (byte-identical to [qoa-format](https://github.com/mattdesl/qoa-format)'s whole-file encoder); whole-file mode keeps the encoded frames, not the PCM. `stream: true` emits them as they encode under a `samples: 0` header (QOA's streaming mode); after `flush()`, `head()` returns the 8-byte header with the sample count. With `frames` (the exact length, known upfront) the header goes out exact and `head()` has nothing to add.
 
 ## License
 

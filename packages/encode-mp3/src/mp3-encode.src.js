@@ -10,7 +10,8 @@ import { createMp3Encoder } from 'wasm-media-encoders'
  * @param {number} [opts.quality] - 0-9 VBR quality (0=best, 9=worst). If set, uses VBR mode.
  * @param {number} [opts.channels] - 1 or 2
  * @param {boolean} [opts.stream] - with `meta` / `chapters` ([{ time, title }]): the ID3v2 tag leads
- *   the stream; the last chapter's end is unknown until head() gives the finished tag
+ *   the stream; the last chapter's end is unknown until head() gives the finished tag, unless
+ * @param {number} [opts.frames] - the exact length is known upfront
  * @returns {{ encode, flush, free, head }}
  *
  * encode(channels: Float32Array[]) → Uint8Array
@@ -21,7 +22,9 @@ export default async function mp3(opts) {
 	let { sampleRate, bitrate = 128, quality, channels, stream, meta, chapters } = opts
 	if (!channels || channels < 1 || channels > 2) channels = 2
 	let id3 = stream && (meta || chapters?.length) ? await import('../meta.js') : null
-	let tag = id3?.id3Tag(meta, chapters), fed = 0, exact = null
+	// the last chapter ends at the end: known upfront from `frames`, else patched in by head()
+	let end = opts.frames ? Math.round(opts.frames / sampleRate * 1000) : undefined
+	let tag = id3?.id3Tag(meta, chapters, end), fed = 0, exact = null
 
 	let encoder = await createMp3Encoder()
 
@@ -72,7 +75,8 @@ export default async function mp3(opts) {
 
 	function flush() {
 		let raw = lead(new Uint8Array(encoder.finalize()))
-		if (id3 && chapters?.length) exact = id3.id3Tag(meta, chapters, Math.round(fed / sampleRate * 1000))
+		let last = Math.round(fed / sampleRate * 1000)
+		if (id3 && chapters?.length && last !== end) exact = id3.id3Tag(meta, chapters, last)
 		return raw
 	}
 

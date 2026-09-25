@@ -36,7 +36,7 @@ Input is `Float32Array[]` — one array per channel. Big-endian interleaving han
 
 ### Streaming output
 
-`stream: true`: the header goes out with the first samples, the data chunk size `-1` (the CAF spec's "unknown, runs to the end"). After `flush()`, `head()` returns the exact header to write over the start of a file.
+`stream: true`: the header goes out with the first samples, the data chunk size `-1` (the CAF spec's "unknown, runs to the end"). After `flush()`, `head()` returns the exact header to write over the start of a file. With `frames` (the exact length, known upfront) the header goes out exact and `head()` has nothing to add.
 
 ## License
 

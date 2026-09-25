@@ -1,6 +1,8 @@
 export interface Mp3EncodeOptions {
 	/** Emit bytes as they encode (metadata in the header); head() gives the final header. */
 	stream?: boolean;
+	/** The exact length in sample frames, when known upfront: the streamed header goes out exact. */
+	frames?: number;
 	/** With stream: ID3v2 tags (meta) and chapters lead the stream. */
 	meta?: Record<string, any>;
 	chapters?: { time: number; title?: string }[];

@@ -9,6 +9,7 @@
  * @param {number} opts.sampleRate
  * @param {boolean} [opts.stream] - emit frames as they encode: the file header says `samples: 0`
  *   (the spec's streaming mode) until head() gives the exact 8-byte header
+ * @param {number} [opts.frames] - with stream: the exact length, when known upfront: the header goes out exact
  * @returns {{ encode, flush, free, head }}
  */
 import {
@@ -48,7 +49,7 @@ export default async function qoa(opts) {
 			init(opts.channels || 1)
 		}
 		let out = fill ? [frame()] : []
-		if (stream) { exact = header(total); return emit(out) }
+		if (stream) { exact = opts.frames === total ? null : header(total); return emit(out) }
 		return concat([header(total), ...frames, ...out])
 	}
 
@@ -65,7 +66,7 @@ export default async function qoa(opts) {
 
 	function emit(out) {
 		if (!stream) { frames.push(...out); return new Uint8Array(0) }
-		if (!sent) { sent = true; out.unshift(header(0)) }
+		if (!sent) { sent = true; out.unshift(header(opts.frames ?? 0)) }
 		return concat(out)
 	}
 

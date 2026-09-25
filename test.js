@@ -360,3 +360,16 @@ t('stream: m4a is fragmented (ftyp, moov, moof+mdat…), fragments before the en
 	ok(dec.channelData[0].length >= x.length, 'decodes (@audio/decode reads fragments)')
 })
 
+t('stream: with `frames` (the exact length, known upfront) the streamed header is exact from the start', async () => {
+	let { channelData, sampleRate } = await getLena()
+	let ch = channelData.map(c => c.subarray(0, 100003))
+	let meta = { title: 'Lena' }, chapters = [{ time: 0, title: 'One' }, { time: 1, title: 'Two' }]
+	for (let [fmt, opts] of [['wav', { meta }], ['wav', { bitDepth: 24 }], ['aiff', {}], ['caf', {}], ['qoa', {}], ['mp3', { meta, chapters }], ['flac', {}]]) {
+		let { out, head } = await streamed(fmt, ch, { sampleRate, frames: ch[0].length, ...opts })
+		let whole = await encode[fmt](ch, { sampleRate, ...opts })
+		if (fmt === 'flac') { ok(head && out.subarray(8, 26).every((b, i) => b === whole[8 + i] || i >= 4 && i < 10), 'flac: sample count upfront, MD5 at the end'); continue }
+		is(head, null, `${fmt}: nothing to patch`)
+		ok(out.length === whole.length && out.every((b, i) => b === whole[i]), `${fmt} ${JSON.stringify(opts).slice(0, 30)}: ≡ whole-file, unpatched`)
+	}
+})
+

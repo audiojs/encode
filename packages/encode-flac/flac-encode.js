@@ -8,6 +8,7 @@
  * @param {number} [opts.bitDepth=16] - 16 or 24
  * @param {number} [opts.compression=5] - compression level 0-8
  * @param {boolean} [opts.stream] - with `meta`: metadata blocks go into the streamed header
+ * @param {number} [opts.frames] - the exact length, when known upfront: STREAMINFO says it from the start
  * @returns {{ encode, flush, free, head }}
  *
  * encode(channels: Float32Array[]) → Uint8Array
@@ -35,7 +36,7 @@ export default async function flac(opts) {
 
 	function init(numCh) {
 		nch = nch || numCh
-		enc = Flac.create_libflac_encoder(sampleRate, nch, bitDepth, compression, 0, false, 0)
+		enc = Flac.create_libflac_encoder(sampleRate, nch, bitDepth, compression, opts.frames || 0, false, 0)
 		if (!enc) throw Error('FLAC encoder creation failed')
 		let status = Flac.init_encoder_stream(enc, write_cb, si => { info = si })
 		if (status !== 0) throw Error('FLAC encoder init failed: ' + status)

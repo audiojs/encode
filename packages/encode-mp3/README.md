@@ -36,7 +36,7 @@ encoder.free();
 
 ### Streaming output
 
-`chapters: [{ time, title }]` (seconds) become ID3v2 CTOC/CHAP frames ([ID3v2 Chapter Frame Addendum](https://id3.org/id3v2-chapters-1.0)), in `writeMeta` too. `stream: true` puts the tag (`meta`, `chapters`) ahead of the first frames; the last chapter's end is unknown until `head()` returns the finished tag after `flush()`.
+`chapters: [{ time, title }]` (seconds) become ID3v2 CTOC/CHAP frames ([ID3v2 Chapter Frame Addendum](https://id3.org/id3v2-chapters-1.0)), in `writeMeta` too. `stream: true` puts the tag (`meta`, `chapters`) ahead of the first frames; the last chapter's end is unknown until `head()` returns the finished tag after `flush()`, unless `frames` gives the exact length upfront.
 
 ## License
 

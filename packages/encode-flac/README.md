@@ -36,7 +36,7 @@ encoder.free();
 
 ### Streaming output
 
-After `flush()`, `head()` returns the first 42 bytes with the final STREAMINFO (total samples, MD5, frame sizes), which libFLAC only knows at the end: write it over the start. `stream: true` also puts `meta` into the metadata blocks ahead of the frames.
+After `flush()`, `head()` returns the first 42 bytes with the final STREAMINFO (total samples, MD5, frame sizes), which libFLAC only knows at the end: write it over the start. `stream: true` also puts `meta` into the metadata blocks ahead of the frames; `frames` (the exact length, known upfront) puts the sample count into STREAMINFO from the start.
 
 ## License
 

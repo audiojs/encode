@@ -116,6 +116,7 @@ await file.close()
 | `chapters` | `[{ time, title }]` (seconds): ID3 CHAP/CTOC, iTunes chpl | mp3, m4a |
 | `profile` | `'lc'`, `'he'` (HE-AAC), `'hev2'` (HE-AACv2, stereo) | aac, m4a |
 | `stream` | Emit as it encodes; `head()` after (see above) | all |
+| `frames` | With `stream`: the exact length, when known upfront, so the header goes out exact (a canonical WAV; a pipe gets true totals) | wav, aiff, caf, qoa, flac, mp3 |
 
 
 ### Metadata

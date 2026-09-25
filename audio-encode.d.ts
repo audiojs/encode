@@ -41,6 +41,9 @@ export interface EncodeOptions {
 	 *  totals the header can't know yet read "unknown" (WAV/AIFF 0xFFFFFFFF, CAF -1, QOA 0,
 	 *  FLAC STREAMINFO 0) until `head()`; m4a/mp4 become fragmented. */
 	stream?: boolean;
+	/** With stream: the exact length in sample frames, when known upfront. The header goes out exact
+	 *  (a canonical WAV, no RF64 reserve under 4 GB): a pipe gets the true totals, head() has less to do. */
+	frames?: number;
 	[key: string]: any;
 }
 

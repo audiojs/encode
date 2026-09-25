@@ -1,6 +1,8 @@
 export interface WavEncodeOptions {
 	/** Emit bytes as they encode (metadata in the header); head() gives the final header. */
 	stream?: boolean;
+	/** The exact length in sample frames, when known upfront: the streamed header goes out exact. */
+	frames?: number;
 	sampleRate: number;
 	bitDepth?: 16 | 24 | 32;
 }

@@ -389,7 +389,8 @@ async function mp3(opts) {
   let { sampleRate, bitrate = 128, quality, channels, stream, meta, chapters } = opts;
   if (!channels || channels < 1 || channels > 2) channels = 2;
   let id3 = stream && (meta || chapters?.length) ? await Promise.resolve().then(() => (init_meta(), meta_exports)) : null;
-  let tag = id3?.id3Tag(meta, chapters), fed = 0, exact = null;
+  let end = opts.frames ? Math.round(opts.frames / sampleRate * 1e3) : void 0;
+  let tag = id3?.id3Tag(meta, chapters, end), fed = 0, exact = null;
   let encoder = await o();
   let cfg = { sampleRate, channels };
   if (quality != null) cfg.vbrQuality = quality;
@@ -417,8 +418,8 @@ async function mp3(opts) {
     }
     let parts = [];
     for (let i = 0; i < n; i += CHUNK) {
-      let end = Math.min(i + CHUNK, n);
-      let slice = ch.map((c) => c.subarray(i, end));
+      let end2 = Math.min(i + CHUNK, n);
+      let slice = ch.map((c) => c.subarray(i, end2));
       let raw = encoder.encode(slice);
       if (raw.length) parts.push(new Uint8Array(raw));
     }
@@ -434,7 +435,8 @@ async function mp3(opts) {
   }
   function flush() {
     let raw = lead(new Uint8Array(encoder.finalize()));
-    if (id3 && chapters?.length) exact = id3.id3Tag(meta, chapters, Math.round(fed / sampleRate * 1e3));
+    let last = Math.round(fed / sampleRate * 1e3);
+    if (id3 && chapters?.length && last !== end) exact = id3.id3Tag(meta, chapters, last);
     return raw;
   }
   function free() {

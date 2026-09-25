@@ -1,6 +1,6 @@
 {
   "name": "@audio/encode-flac",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "description": "Encode PCM audio samples to FLAC format via WASM",
   "type": "module",
   "main": "flac-encode.js",

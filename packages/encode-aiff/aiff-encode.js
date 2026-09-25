@@ -5,6 +5,7 @@
  * @param {number} [opts.bitDepth=16] - 16 or 24
  * @param {boolean} [opts.stream] - emit the header and samples as they are encoded, sizes unknown
  *   (0xFFFFFFFF, read to the end) until head() gives the exact header; `meta` rides in an ID3 chunk
+ * @param {number} [opts.frames] - with stream: the exact length, when known upfront: the header goes out exact
  * @returns {{ encode, flush, free, head }}
  */
 export default async function aiff(opts) {
@@ -53,7 +54,7 @@ export default async function aiff(opts) {
 		if (stream) {
 			if (sent) return buf
 			sent = true
-			let h = header(false), out = new Uint8Array(h.length + buf.length)
+			let h = header(opts.frames), out = new Uint8Array(h.length + buf.length)
 			out.set(h); out.set(buf, h.length)
 			return out
 		}
@@ -61,12 +62,12 @@ export default async function aiff(opts) {
 		return new Uint8Array(0)
 	}
 
-	// FORM, COMM, [ID3], SSND header. `known`: exact sizes, else 0xFFFFFFFF (unknown, read to the end)
-	function header(known) {
-		let ch = nCh || opts.channels || 1, x = id3?.length || 0
+	// FORM, COMM, [ID3], SSND header for `frames` sample frames; null: sizes 0xFFFFFFFF (unknown, read to the end)
+	function header(frames) {
+		let ch = nCh || opts.channels || 1, x = id3?.length || 0, bytes = (frames ?? 0) * ch * bytesPerSample
 		let hdr = new Uint8Array(12 + 26 + x + 16), dv = new DataView(hdr.buffer), p = 0
-		let ssndSize = totalBytes + 8, formSize = 4 + 26 + x + 8 + ssndSize + (totalBytes & 1)
-		let fit = known && formSize <= 0xFFFFFFFF
+		let ssndSize = bytes + 8, formSize = 4 + 26 + x + 8 + ssndSize + (bytes & 1)
+		let fit = frames != null && formSize <= 0xFFFFFFFF
 
 		// FORM
 		str('FORM'); dv.setUint32(p, fit ? formSize : 0xFFFFFFFF, false); p += 4; str('AIFF')
@@ -74,7 +75,7 @@ export default async function aiff(opts) {
 		// COMM
 		str('COMM'); dv.setUint32(p, 18, false); p += 4
 		dv.setInt16(p, ch, false); p += 2
-		dv.setUint32(p, fit ? numFrames : 0xFFFFFFFF, false); p += 4
+		dv.setUint32(p, fit ? frames : 0xFFFFFFFF, false); p += 4
 		dv.setInt16(p, depth, false); p += 2
 		writeF80(dv, p, rate); p += 10
 
@@ -94,13 +95,13 @@ export default async function aiff(opts) {
 	function flush() {
 		if (!nCh) nCh = opts.channels || 1
 		if (stream) {
-			exact = header(true)
-			let h = sent ? null : (sent = true, header(false)), pad = totalBytes & 1 ? new Uint8Array(1) : null
+			let h = sent ? null : (sent = true, header(opts.frames)), pad = totalBytes & 1 ? new Uint8Array(1) : null
+			exact = opts.frames === numFrames ? null : header(numFrames)  // the declared length held: nothing to patch
 			if (!h) return pad || new Uint8Array(0)
 			let out = new Uint8Array(h.length + (pad ? 1 : 0)); out.set(h); return out
 		}
 
-		let hdr = header(true)
+		let hdr = header(numFrames)
 		let file = new Uint8Array(hdr.length + totalBytes + (totalBytes & 1))  // chunks pad to even
 		file.set(hdr)
 		let off = hdr.length

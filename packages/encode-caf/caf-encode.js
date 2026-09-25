@@ -5,6 +5,7 @@
  * @param {number} [opts.bitDepth=16] - 16 (int) or 32 (float)
  * @param {boolean} [opts.stream] - emit the header and samples as they are encoded: the data chunk
  *   size is -1 (CAF spec: unknown, the data chunk runs to the end) until head() gives the exact one
+ * @param {number} [opts.frames] - with stream: the exact length, when known upfront: the header goes out exact
  * @returns {{ encode, flush, free, head }}
  */
 export default async function caf(opts) {
@@ -49,7 +50,7 @@ export default async function caf(opts) {
 		if (stream) {
 			if (sent) return buf
 			sent = true
-			let h = header(false), out = new Uint8Array(h.length + buf.length)
+			let h = header(declared()), out = new Uint8Array(h.length + buf.length)
 			out.set(h); out.set(buf, h.length)
 			return out
 		}
@@ -63,12 +64,11 @@ export default async function caf(opts) {
 	function flush() {
 		if (!nCh) nCh = opts.channels || 1
 		if (stream) {
-			exact = header(true)
-			if (sent) return new Uint8Array(0)
-			sent = true
-			return header(false)
+			let h = sent ? null : (sent = true, header(declared()))
+			exact = opts.frames != null && opts.frames * nCh * bytesPerSample === totalBytes ? null : header(totalBytes)
+			return h || new Uint8Array(0)
 		}
-		let hdr = header(true)
+		let hdr = header(totalBytes)
 		let file = new Uint8Array(hdr.length + totalBytes)
 		file.set(hdr)
 		let off = hdr.length
@@ -76,8 +76,11 @@ export default async function caf(opts) {
 		return file
 	}
 
-	// file header + desc + data chunk header; `known`: exact data size, else -1 (to the end)
-	function header(known) {
+	function declared() { return opts.frames != null ? opts.frames * (nCh || opts.channels || 1) * bytesPerSample : null }
+
+	// file header + desc + data chunk header for `bytes` of samples; null: -1 (to the end)
+	function header(bytes) {
+		let known = bytes != null
 		let ch = nCh || opts.channels || 1
 
 		// CAF file header (8) + desc chunk (12+32) + data chunk header (12+4)
@@ -105,7 +108,7 @@ export default async function caf(opts) {
 		dv.setUint32(p, depth, false); p += 4                 // mBitsPerChannel
 
 		// 'data' chunk: type(4) + size Int64(8) + mEditCount(4) + pcm
-		let pcmBytes = totalBytes
+		let pcmBytes = bytes ?? 0
 		let dataBodySize = 4 + pcmBytes  // mEditCount(4) + pcm
 		str4(hdr, p, 'data'); p += 4
 		dv.setUint32(p, known ? Math.floor(dataBodySize / 0x100000000) : 0xFFFFFFFF, false); p += 4  // size high 32 bits
