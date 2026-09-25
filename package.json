@@ -78,7 +78,7 @@
     "@audio/encode-alac": "^1.0.1"
   },
   "devDependencies": {
-    "@audio/decode": "^3.14.0",
+    "@audio/decode": "^3.16.0",
     "audio-buffer": "^7.3.0",
     "audio-lena": "^3.0.0",
     "esbuild": "^0.28.0",

@@ -64,7 +64,7 @@
   "devDependencies": {
     "@audio/decode": "^3.14.1",
     "@audio/decode-aac": "^1.5.0",
-    "@audio/decode-mp4": "^1.1.0",
+    "@audio/decode-mp4": "^1.2.0",
     "tst": "^9.4.0"
   },
   "publishConfig": {
