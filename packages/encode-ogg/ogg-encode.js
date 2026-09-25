@@ -1,3 +1,243 @@
+var __defProp = Object.defineProperty;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __esm = (fn, res, err) => function __init() {
+  if (err) throw err[0];
+  try {
+    return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+  } catch (e) {
+    throw err = [e], e;
+  }
+};
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
+
+// meta.js
+var meta_exports = {};
+__export(meta_exports, {
+  metaStream: () => metaStream,
+  writeMeta: () => writeMeta
+});
+function concat(arrays) {
+  let n = 0;
+  for (let a of arrays) n += a.length;
+  let out = new Uint8Array(n), off = 0;
+  for (let a of arrays) {
+    out.set(a, off);
+    off += a.length;
+  }
+  return out;
+}
+function buildCommentPacket(meta) {
+  let vendor = TE.encode("audio-encode");
+  let entries = [];
+  for (let k in VORBIS_MAP) {
+    let v = meta[k];
+    if (v == null || v === "") continue;
+    entries.push(TE.encode(VORBIS_MAP[k] + "=" + v));
+  }
+  let size = 7 + 4 + vendor.length + 4;
+  for (let e of entries) size += 4 + e.length;
+  size += 1;
+  let b = new Uint8Array(size);
+  let d = new DataView(b.buffer);
+  b[0] = 3;
+  b.set(TE.encode("vorbis"), 1);
+  let pos = 7;
+  d.setUint32(pos, vendor.length, true);
+  pos += 4;
+  b.set(vendor, pos);
+  pos += vendor.length;
+  d.setUint32(pos, entries.length, true);
+  pos += 4;
+  for (let e of entries) {
+    d.setUint32(pos, e.length, true);
+    pos += 4;
+    b.set(e, pos);
+    pos += e.length;
+  }
+  b[pos] = 1;
+  return b;
+}
+function parsePages(bytes) {
+  let pages = [];
+  let off = 0;
+  while (off + 27 <= bytes.length) {
+    if (!(bytes[off] === 79 && bytes[off + 1] === 103 && bytes[off + 2] === 103 && bytes[off + 3] === 83)) break;
+    let nSegs = bytes[off + 26];
+    let segTable = bytes.subarray(off + 27, off + 27 + nSegs);
+    let payloadLen = 0;
+    for (let i = 0; i < nSegs; i++) payloadLen += segTable[i];
+    let payloadStart = off + 27 + nSegs;
+    pages.push({ start: off, len: 27 + nSegs + payloadLen, nSegs, segTable, payloadStart });
+    off += 27 + nSegs + payloadLen;
+  }
+  return pages;
+}
+function buildPage(payload, segLens, serial, seq, granule, flags) {
+  let nSegs = segLens.length;
+  let page = new Uint8Array(27 + nSegs + payload.length);
+  let d = new DataView(page.buffer);
+  page[0] = 79;
+  page[1] = 103;
+  page[2] = 103;
+  page[3] = 83;
+  page[4] = 0;
+  page[5] = flags;
+  d.setUint32(6, Number(granule & 0xFFFFFFFFn), true);
+  d.setUint32(10, Number(granule >> 32n & 0xFFFFFFFFn), true);
+  d.setUint32(14, serial, true);
+  d.setUint32(18, seq, true);
+  d.setUint32(22, 0, true);
+  page[26] = nSegs;
+  for (let i = 0; i < nSegs; i++) page[27 + i] = segLens[i];
+  page.set(payload, 27 + nSegs);
+  d.setUint32(22, oggCrc(page), true);
+  return page;
+}
+function pageify(packets, serial, startSeq, firstFlags) {
+  let allBytes = concat(packets);
+  let segLens = [];
+  for (let p of packets) {
+    let n = Math.floor(p.length / 255);
+    for (let i = 0; i < n; i++) segLens.push(255);
+    segLens.push(p.length % 255);
+  }
+  let pages = [], segIdx = 0, byteOff = 0, seq = startSeq, pageNo = 0, prevLast = -1;
+  while (segIdx < segLens.length) {
+    let count = Math.min(255, segLens.length - segIdx);
+    let pageSegs = segLens.slice(segIdx, segIdx + count);
+    let payloadLen = pageSegs.reduce((a, b) => a + b, 0);
+    let flags = pageNo === 0 ? firstFlags : prevLast === 255 ? 1 : 0;
+    pages.push(buildPage(allBytes.subarray(byteOff, byteOff + payloadLen), pageSegs, serial, seq++, 0n, flags));
+    prevLast = pageSegs[pageSegs.length - 1];
+    segIdx += count;
+    byteOff += payloadLen;
+    pageNo++;
+  }
+  return { pages, nextSeq: seq };
+}
+function writeMeta(bytes, { meta = {} } = {}) {
+  let pages = parsePages(bytes);
+  if (pages.length < 2) return bytes;
+  let serial = new DataView(bytes.buffer, bytes.byteOffset).getUint32(pages[0].start + 14, true);
+  let packets = [], cur = [], lastHeaderPage = -1, bailed = false;
+  for (let pi = 0; pi < pages.length && packets.length < 3; pi++) {
+    let pg = pages[pi], segOff = pg.payloadStart;
+    for (let s2 = 0; s2 < pg.nSegs; s2++) {
+      let segLen = pg.segTable[s2];
+      cur.push(bytes.subarray(segOff, segOff + segLen));
+      segOff += segLen;
+      if (segLen < 255) {
+        packets.push(concat(cur));
+        cur = [];
+        if (packets.length === 3) {
+          if (s2 < pg.nSegs - 1) bailed = true;
+          lastHeaderPage = pi;
+          break;
+        }
+      }
+    }
+  }
+  if (bailed || packets.length < 3) return bytes;
+  let c = packets[1];
+  if (!(c[0] === 3 && c[1] === 118 && c[2] === 111 && c[3] === 114 && c[4] === 98 && c[5] === 105 && c[6] === 115)) return bytes;
+  let header = [packets[0], buildCommentPacket(meta), packets[2]];
+  let p0 = pageify([header[0]], serial, 0, 2);
+  let p1 = pageify([header[1], header[2]], serial, p0.nextSeq, 0);
+  let seq = p1.nextSeq;
+  let audio = [];
+  for (let pi = lastHeaderPage + 1; pi < pages.length; pi++) {
+    let pg = pages[pi];
+    let copy = bytes.slice(pg.start, pg.start + pg.len);
+    let d = new DataView(copy.buffer);
+    d.setUint32(18, seq++, true);
+    d.setUint32(22, 0, true);
+    d.setUint32(22, oggCrc(copy), true);
+    audio.push(copy);
+  }
+  return concat([...p0.pages, ...p1.pages, ...audio]);
+}
+function metaStream(meta = {}) {
+  let held = new Uint8Array(0), delta = null;
+  return (bytes) => {
+    held = held.length ? concat([held, bytes]) : bytes;
+    let out = [];
+    if (delta == null) {
+      let pages = parsePages(held).filter((pg) => pg.start + pg.len <= held.length), packets = 0, end = -1;
+      for (let pg of pages) {
+        for (let s2 = 0; s2 < pg.nSegs && packets < 3; s2++) if (pg.segTable[s2] < 255) packets++;
+        if (packets === 3) {
+          end = pg.start + pg.len;
+          break;
+        }
+      }
+      if (end < 0) return new Uint8Array(0);
+      let before = pages.findIndex((pg) => pg.start + pg.len === end) + 1;
+      let header = writeMeta(held.subarray(0, end), { meta });
+      delta = parsePages(header).length - before;
+      out.push(header);
+      held = held.subarray(end);
+    }
+    if (!delta) {
+      out.push(held);
+      held = new Uint8Array(0);
+      return concat(out);
+    }
+    let used = 0;
+    for (let pg of parsePages(held)) {
+      if (pg.start + pg.len > held.length) break;
+      let copy = held.slice(pg.start, pg.start + pg.len), d = new DataView(copy.buffer);
+      d.setUint32(18, d.getUint32(18, true) + delta, true);
+      d.setUint32(22, 0, true);
+      d.setUint32(22, oggCrc(copy), true);
+      out.push(copy);
+      used = pg.start + pg.len;
+    }
+    held = held.subarray(used);
+    return concat(out);
+  };
+}
+function oggCrc(data) {
+  if (!crcTbl) {
+    crcTbl = new Uint32Array(256);
+    for (let i = 0; i < 256; i++) {
+      let r = i << 24;
+      for (let j = 0; j < 8; j++) r = (r & 2147483648 ? r << 1 ^ 79764919 : r << 1) >>> 0;
+      crcTbl[i] = r >>> 0;
+    }
+  }
+  let crc = 0;
+  for (let i = 0; i < data.length; i++) crc = (crc << 8 ^ crcTbl[(crc >>> 24 ^ data[i]) & 255]) >>> 0;
+  return crc >>> 0;
+}
+var TE, VORBIS_MAP, crcTbl;
+var init_meta = __esm({
+  "meta.js"() {
+    TE = new TextEncoder();
+    VORBIS_MAP = {
+      title: "TITLE",
+      artist: "ARTIST",
+      album: "ALBUM",
+      albumartist: "ALBUMARTIST",
+      composer: "COMPOSER",
+      genre: "GENRE",
+      year: "DATE",
+      track: "TRACKNUMBER",
+      disc: "DISCNUMBER",
+      bpm: "BPM",
+      key: "KEY",
+      comment: "COMMENT",
+      copyright: "COPYRIGHT",
+      isrc: "ISRC",
+      publisher: "PUBLISHER",
+      software: "ENCODER",
+      lyrics: "LYRICS"
+    };
+  }
+});
+
 // ../../node_modules/@swc/helpers/esm/_define_property.js
 function _define_property(obj, key, value) {
   if (key in obj) {
@@ -190,11 +430,12 @@ function s() {
 
 // src/ogg-encode.src.js
 async function ogg(opts) {
-  let { sampleRate, quality = 3, channels } = opts;
+  let { sampleRate, quality = 3, channels, stream, meta } = opts;
   let enc = await s();
   let nch = channels || 0;
+  let tag = stream && meta ? (await Promise.resolve().then(() => (init_meta(), meta_exports))).metaStream(meta) : (b) => b;
   if (nch) enc.configure({ sampleRate, channels: nch, vbrQuality: quality });
-  return { encode, flush, free };
+  return { encode: (ch) => tag(encode(ch)), flush: () => tag(flush()), free };
   function encode(ch) {
     if (!nch) {
       nch = ch.length;

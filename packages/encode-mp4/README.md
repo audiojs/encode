@@ -90,6 +90,10 @@ Drives `@audio/encode-aac` (AAC, browser-only — needs `AudioEncoder`), `@audio
 - iTunes metadata atoms — [mutagen.mp4](https://mutagen.readthedocs.io/en/latest/api/mp4.html), AtomicParsley docs
 - Nero chapters (`chpl`) — format per ffmpeg `libavformat/movenc.c` `mov_write_chpl_tag`
 
+### Streaming output
+
+`stream: true` writes a fragmented file (ISO/IEC 14496-12 §8.8) as it encodes: `ftyp` + `moov` (sample entry, empty tables, `mvex`, tags and chapters) once the first units exist, then `moof` + `mdat` per second of media. Only the current fragment's units are held. `head()` after `flush()` returns the init segment rebuilt with what only the end knows (FLAC's STREAMINFO), or null.
+
 ## License
 
 [MIT](LICENSE)

@@ -163,6 +163,43 @@ export function writeMeta(bytes, { meta = {} } = {}) {
   return concat([...p0.pages, ...p1.pages, ...audio])
 }
 
+/** writeMeta for a stream: feed the encoder's output as it comes, get bytes ready to emit. Pages
+ *  are held only until the three Vorbis headers are complete, then rewritten with `meta`; later
+ *  pages shift by the change in header page count (renumbered, re-CRC'd), untouched if none. */
+export function metaStream(meta = {}) {
+  let held = new Uint8Array(0), delta = null
+  return bytes => {
+    held = held.length ? concat([held, bytes]) : bytes
+    let out = []
+    if (delta == null) {
+      let pages = parsePages(held).filter(pg => pg.start + pg.len <= held.length), packets = 0, end = -1
+      for (let pg of pages) {
+        for (let s = 0; s < pg.nSegs && packets < 3; s++) if (pg.segTable[s] < 255) packets++
+        if (packets === 3) { end = pg.start + pg.len; break }
+      }
+      if (end < 0) return new Uint8Array(0)
+      let before = pages.findIndex(pg => pg.start + pg.len === end) + 1
+      let header = writeMeta(held.subarray(0, end), { meta })
+      delta = parsePages(header).length - before
+      out.push(header)
+      held = held.subarray(end)
+    }
+    if (!delta) { out.push(held); held = new Uint8Array(0); return concat(out) }
+    let used = 0
+    for (let pg of parsePages(held)) {
+      if (pg.start + pg.len > held.length) break
+      let copy = held.slice(pg.start, pg.start + pg.len), d = new DataView(copy.buffer)
+      d.setUint32(18, d.getUint32(18, true) + delta, true)
+      d.setUint32(22, 0, true)
+      d.setUint32(22, oggCrc(copy), true)
+      out.push(copy)
+      used = pg.start + pg.len
+    }
+    held = held.subarray(used)
+    return concat(out)
+  }
+}
+
 // Ogg CRC32: poly=0x04C11DB7, init=0, no reflection, no xorout
 let crcTbl
 function oggCrc(data) {

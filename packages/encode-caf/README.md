@@ -34,6 +34,10 @@ encoder.free();
 
 Input is `Float32Array[]` — one array per channel. Big-endian interleaving handled automatically.
 
+### Streaming output
+
+`stream: true`: the header goes out with the first samples, the data chunk size `-1` (the CAF spec's "unknown, runs to the end"). After `flush()`, `head()` returns the exact header to write over the start of a file.
+
 ## License
 
 [MIT](LICENSE)

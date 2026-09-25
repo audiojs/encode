@@ -33,6 +33,14 @@ export interface EncodeOptions {
 	markers?: Marker[];
 	/** Labeled regions (wav). */
 	regions?: Region[];
+	/** Chapters (mp3: ID3 CHAP/CTOC; m4a/mp4: chpl). */
+	chapters?: { time: number; title?: string }[];
+	/** AAC profile: 'lc' (default), 'he' (HE-AAC, SBR), 'hev2' (HE-AACv2, SBR + PS, stereo). */
+	profile?: 'lc' | 'he' | 'hev2';
+	/** Emit bytes as they encode, metadata in the header, memory flat however long the stream:
+	 *  totals the header can't know yet read "unknown" (WAV/AIFF 0xFFFFFFFF, CAF -1, QOA 0,
+	 *  FLAC STREAMINFO 0) until `head()`; m4a/mp4 become fragmented. */
+	stream?: boolean;
 	[key: string]: any;
 }
 
@@ -45,6 +53,9 @@ export interface StreamEncoder {
 	flush(): Promise<Uint8Array>;
 	/** Free resources without flushing. */
 	free(): void;
+	/** After the end: bytes to write over the start of the output (the header with its final
+	 *  totals, RF64 for WAV past 4 GB), or null when the output is already exact. */
+	head(): Uint8Array | null;
 }
 
 export interface FormatEncoder {
@@ -73,7 +84,7 @@ declare const encode: {
 	opus: FormatEncoder;
 	/** WebM (Opus). */
 	webm: FormatEncoder;
-	/** AAC (ADTS) — browser-only via WebCodecs; throws in Node. */
+	/** AAC (ADTS): WebCodecs where the browser has it, else the FDK encoder (WebAssembly). */
 	aac: FormatEncoder;
 	/** QOA (Quite OK Audio). */
 	qoa: FormatEncoder;

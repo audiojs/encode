@@ -32,6 +32,10 @@ encoder.free();
 
 Input is `Float32Array[]` — one array per channel. Channels are interleaved automatically.
 
+### Streaming output
+
+`stream: true`: the header goes out with the first samples, sizes `0xFFFFFFFF` (read to the end) and a JUNK chunk reserved for `ds64`, metadata chunks (`meta`, `markers`, `regions`) inside it. After `flush()`, `head()` returns the exact header, RF64 past 4 GB (EBU Tech 3306), to write over the start of a file.
+
 ## License
 
 [MIT](LICENSE)

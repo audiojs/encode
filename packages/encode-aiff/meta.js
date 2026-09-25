@@ -83,6 +83,17 @@ function buildId3v2(meta) {
 }
 
 /** Splice an ID3v2 chunk into AIFF/AIFC bytes. Returns new Uint8Array. */
+/** The 'ID3 ' chunk carrying an ID3v2 tag for `meta`, or null when there is nothing to tag. */
+export function id3Chunk(meta = {}) {
+  let tag = buildId3v2(meta)
+  if (!tag) return null
+  let chunk = new Uint8Array(8 + tag.length + (tag.length & 1))
+  chunk.set(TE.encode('ID3 '), 0)
+  wu32be(chunk, 4, tag.length)
+  chunk.set(tag, 8)
+  return chunk
+}
+
 export function writeMeta(bytes, { meta = {} } = {}) {
   if (bytes.length < 12 || fourcc(bytes, 0) !== 'FORM') return bytes
   let formType = fourcc(bytes, 8)
@@ -98,13 +109,8 @@ export function writeMeta(bytes, { meta = {} } = {}) {
     off += total
   }
 
-  let tag = buildId3v2(meta)
-  if (!tag) return bytes
-  let pad = tag.length & 1
-  let chunk = new Uint8Array(8 + tag.length + pad)
-  chunk.set(TE.encode('ID3 '), 0)
-  wu32be(chunk, 4, tag.length)
-  chunk.set(tag, 8)
+  let chunk = id3Chunk(meta)
+  if (!chunk) return bytes
 
   let total = 4 // formType
   for (let c of keep) total += c.length

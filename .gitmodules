@@ -7,3 +7,6 @@
 [submodule "packages/encode-wavpack/lib/wavpack"]
 	path = packages/encode-wavpack/lib/wavpack
 	url = https://github.com/dbry/WavPack.git
+[submodule "packages/encode-aac/lib/fdk-aac"]
+	path = packages/encode-aac/lib/fdk-aac
+	url = https://github.com/mstorsjo/fdk-aac.git

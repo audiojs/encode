@@ -180,12 +180,17 @@ t('webm encode (structural)', async () => {
 	ok(has(buf, 'A_OPUS') && has(buf, 'OpusHead'), 'Opus track + CodecPrivate')
 })
 
-t('aac throws clearly in node (WebCodecs only)', async () => {
-	let threw = false, msg = ''
-	try { await encode.aac(sine(44100, 440, 0.25), { sampleRate: 44100 }) }
-	catch (e) { threw = true; msg = e.message }
-	ok(threw, 'rejected in node')
-	ok(/webcodecs|browser/i.test(msg), 'message names WebCodecs/browser: ' + msg)
+t('aac encodes in node (FDK): ADTS, LC and HE, a clear error for an unknown profile', async () => {
+	for (let profile of ['lc', 'he']) {
+		let buf = await encode.aac(sine(44100, 440, 1), { sampleRate: 44100, profile, bitrate: profile === 'lc' ? 128 : 48 })
+		ok(buf[0] === 0xFF && (buf[1] & 0xF6) === 0xF0, profile + ': ADTS sync')
+		let dec = await decode(buf)
+		is(dec.sampleRate, 44100, profile + ': output rate (HE: SBR doubles the core)')
+		ok(dec.channelData[0].length >= 44100, profile + ': all of it (plus the encoder delay)')
+	}
+	let msg = ''
+	try { await encode.aac(sine(44100, 440, 0.25), { sampleRate: 44100, profile: 'x' }) } catch (e) { msg = e.message }
+	ok(/profile/.test(msg), 'unknown profile named: ' + msg)
 })
 
 // --- wav 24-bit ---
@@ -274,16 +279,18 @@ t('wv round-trip (lossless, APEv2 tags)', async () => {
 	ok(maxd < 1 / 32768, '16-bit lossless: max diff ' + maxd.toExponential(2))
 })
 
-t('m4a round-trip: default codec (FLAC in Node), alac, opus — tags in ilst', async () => {
+t('m4a round-trip: aac (the default, FDK in Node), flac, alac, opus — tags in ilst', async () => {
 	let { channelData, sampleRate } = await getLena()
 	let { m4a } = await import('@audio/decode/meta')
-	for (let opts of [{}, { codec: 'alac' }, { codec: 'opus' }]) {
-		let buf = await encode.m4a(channelData, { sampleRate, ...opts, meta: { title: 'Lena ' + (opts.codec || 'flac'), artist: 'audiojs' } })
+	for (let opts of [{}, { codec: 'flac' }, { codec: 'alac' }, { codec: 'opus' }]) {
+		let name = opts.codec || 'aac'
+		let buf = await encode.m4a(channelData, { sampleRate, ...opts, meta: { title: 'Lena ' + name, artist: 'audiojs' } })
 		ok(has(buf, 'ftyp') && has(buf, 'moov') && has(buf, 'mdat'), 'ISOBMFF boxes')
-		is(m4a(buf)?.meta.title, 'Lena ' + (opts.codec || 'flac'), 'ilst title')
+		is(m4a(buf)?.meta.title, 'Lena ' + name, 'ilst title')
 		let dec = await decode(buf)
 		is(dec.channelData.length, channelData.length, 'channels')
-		if (opts.codec === 'opus') { is(dec.sampleRate, 48000); almost(rms(dec.channelData[0]), rms(channelData[0]), 0.02, 'rms within opus tolerance'); continue }
+		if (name === 'opus') { is(dec.sampleRate, 48000); almost(rms(dec.channelData[0]), rms(channelData[0]), 0.02, 'rms within opus tolerance'); continue }
+		if (name === 'aac') { is(dec.sampleRate, sampleRate); almost(rms(dec.channelData[0]), rms(channelData[0]), 0.02, 'rms within aac tolerance'); continue }
 		is(dec.sampleRate, sampleRate)
 		is(dec.channelData[0].length, channelData[0].length, 'sample-exact length')
 		let maxd = 0; for (let i = 0; i < channelData[0].length; i++) maxd = Math.max(maxd, Math.abs(dec.channelData[0][i] - channelData[0][i]))
@@ -291,3 +298,65 @@ t('m4a round-trip: default codec (FLAC in Node), alac, opus — tags in ilst', a
 	}
 	is(encode.formats.includes('m4a') && encode.mime.m4a, 'audio/mp4', 'format registered')
 })
+
+// --- stream: true — bytes as they encode, the header's totals patched after (seekable sinks) ---
+
+async function streamed(fmt, ch, opts, size = 7000) {
+	let enc = await encode[fmt]({ ...opts, channels: ch.length, stream: true }), parts = [], early = 0
+	for (let o = 0; o < ch[0].length; o += size) { let b = await enc(ch.map(c => c.subarray(o, o + size))); if (b.length) early++; parts.push(b) }
+	parts.push(await enc())
+	let n = 0; for (let p of parts) n += p.length
+	let out = new Uint8Array(n); n = 0
+	for (let p of parts) { out.set(p, n); n += p.length }
+	return { out, head: enc.head(), early }
+}
+
+t('stream: wav, aiff, caf, qoa, flac, mp3 — streamed then head() ≡ the whole-file encode, byte for byte', async () => {
+	let { channelData, sampleRate } = await getLena()
+	let ch = channelData.map(c => c.subarray(0, 100003))  // odd length: pad bytes, partial last frames
+	let meta = { title: 'Lena', artist: 'audiojs' }, chapters = [{ time: 0, title: 'One' }, { time: 1, title: 'Two' }]
+	// streamed WAV reserves a JUNK chunk that becomes ds64 past 4 GB (RF64), and streamed AIFF tags
+	// ride before SSND, so those two compare by samples and tags; the rest byte for byte
+	for (let [fmt, opts, bytes] of [['wav', { meta, markers: [{ sample: 100, label: 'm' }] }], ['wav', { bitDepth: 24 }], ['aiff', { meta }], ['aiff', { bitDepth: 24 }, true], ['caf', {}, true], ['qoa', {}, true], ['flac', {}, true], ['mp3', { meta, chapters }, true]]) {
+		let { out, head, early } = await streamed(fmt, ch, { sampleRate, ...opts })
+		let name = `${fmt} ${JSON.stringify(opts).slice(0, 30)}`
+		ok(early > 0, `${name}: bytes before the end`)
+		let raw = await decode(out.slice())   // unpatched, as a pipe gets it: the totals say "unknown"
+		let n = raw.channelData[0].length   // mp3 adds its encoder delay and padding
+		ok(fmt === 'mp3' ? n >= ch[0].length : n === ch[0].length, `${name}: unpatched stream decodes to the end (${n})`)
+		if (head) out.set(head, 0)
+		let whole = await encode[fmt](ch, { sampleRate, ...opts })
+		if (bytes) { ok(out.length === whole.length && out.every((b, i) => b === whole[i]), `${name}: patched ≡ whole-file`); continue }
+		let a = await decode(out), b = await decode(whole)
+		ok(a.channelData.every((c, k) => c.length === b.channelData[k].length && c.every((v, i) => v === b.channelData[k][i])), `${name}: patched decodes ≡ whole-file`)
+		if (opts.meta) ok(has(out, 'Lena'), `${name}: tags in the header`)
+	}
+})
+
+t('stream: flac carries its STREAMINFO totals (sample count, MD5) once patched — whole-file too', async () => {
+	let x = sine(44100, 440, 1)[0]
+	let whole = await encode.flac([x], { sampleRate: 44100 })
+	let dv = new DataView(whole.buffer, whole.byteOffset + 8)
+	is((dv.getUint8(13) & 15) * 2 ** 32 + dv.getUint32(14), 44100, 'total samples')
+	ok(whole.subarray(26, 42).some(b => b), 'MD5 set')
+})
+
+t('stream: ogg tags stream in the comment header; later pages renumbered in sequence', async () => {
+	let { channelData, sampleRate } = await getLena()
+	let { out } = await streamed('ogg', [channelData[0]], { sampleRate, meta: { title: 'Lena', comment: 'x'.repeat(70000) } })
+	let seq = []
+	for (let o = 0; o + 27 <= out.length;) { let n = out[o + 26], len = 27 + n; for (let i = 0; i < n; i++) len += out[o + 27 + i]; seq.push(new DataView(out.buffer, out.byteOffset + o).getUint32(18, true)); o += len }
+	ok(seq.every((s, i) => s === i), 'page sequence contiguous')
+	ok(has(out, 'Lena'), 'tag in the stream')
+	is((await decode(out)).channelData[0].length, channelData[0].length, 'decodes whole')
+})
+
+t('stream: m4a is fragmented (ftyp, moov, moof+mdat…), fragments before the end', async () => {
+	let x = sine(44100, 440, 3)[0]
+	let { out, early } = await streamed('m4a', [x], { sampleRate: 44100, meta: { title: 'T' } }, 4096)
+	ok(early > 1, 'fragments before the end')
+	ok(has(out, 'mvex') && has(out, 'moof') && has(out, 'tfdt'), 'movie fragments')
+	let dec = await decode(out)
+	ok(dec.channelData[0].length >= x.length, 'decodes (@audio/decode reads fragments)')
+})
+

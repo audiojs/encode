@@ -4,10 +4,14 @@
  * @param {Object} opts
  * @param {number} opts.sampleRate
  * @param {number} [opts.bitDepth=16] - 16 or 24 (int PCM), or 32 (float)
- * @returns {{ encode, flush, free }}
+ * @param {boolean} [opts.stream] - emit the header and PCM as they are encoded. Sizes are unknown
+ *   meanwhile (0xFFFFFFFF: read to the end); head() gives the exact header to write over the start,
+ *   RF64 past 4 GB (EBU Tech 3306: a JUNK chunk reserved for ds64). Metadata goes in the header.
+ * @param {object} [opts.meta] @param {object[]} [opts.markers] @param {object[]} [opts.regions] - with stream
+ * @returns {{ encode, flush, free, head }}
  */
 export default async function wav(opts) {
-	let { sampleRate, bitDepth = 16 } = opts
+	let { sampleRate, bitDepth = 16, stream } = opts
 	if (bitDepth !== 16 && bitDepth !== 24 && bitDepth !== 32)
 		throw Error('Unsupported bitDepth: ' + bitDepth + ' (use 16, 24, or 32)')
 	let float = bitDepth === 32
@@ -16,8 +20,11 @@ export default async function wav(opts) {
 	let nch = 0
 	let chunks = []
 	let size = 0
+	let extras = stream && (opts.meta || opts.markers?.length || opts.regions?.length)
+		? (await import('./meta.js')).metaChunks(opts) : []
+	let sent = false, exact = null
 
-	return { encode, flush, free }
+	return { encode, flush, free, head }
 
 	// encode(channels: Float32Array[]) → Uint8Array (raw PCM chunk)
 	function encode(ch) {
@@ -48,13 +55,67 @@ export default async function wav(opts) {
 			}
 		}
 
-		chunks.push(buf)
 		size += buf.length
+		if (stream) {
+			if (sent) return buf
+			sent = true
+			let h = header(0xFFFFFFFF), out = new Uint8Array(h.length + buf.length)
+			out.set(h); out.set(buf, h.length)
+			return out
+		}
+		chunks.push(buf)
 		return new Uint8Array(0)
 	}
 
-	// flush() → Uint8Array (complete WAV file with RIFF header)
+	// Streamed header: RIFF, JUNK (28 bytes reserved for ds64), fmt, metadata, data. `data` is the
+	// data size, or 0xFFFFFFFF while unknown; past 32 bits it becomes RF64 with a ds64 chunk.
+	function header(data) {
+		let x = 0
+		for (let e of extras) x += e.length
+		let h = new Uint8Array(12 + 36 + 24 + x + 8), dv = new DataView(h.buffer)
+		let ch = nch || opts.channels || 1, pad = data & 1, known = data !== 0xFFFFFFFF
+		let riff = known ? h.length - 8 + data + pad : 0xFFFFFFFF
+		let rf64 = known && riff > 0xFFFFFFFF
+		dv.setUint32(0, rf64 ? 0x52463634 : 0x52494646)       // "RF64" | "RIFF"
+		dv.setUint32(4, rf64 ? 0xFFFFFFFF : riff, true)
+		dv.setUint32(8, 0x57415645)                           // "WAVE"
+		dv.setUint32(12, rf64 ? 0x64733634 : 0x4A554E4B)      // "ds64" | "JUNK"
+		dv.setUint32(16, 28, true)
+		if (rf64) {
+			setU64(dv, 20, riff); setU64(dv, 28, data); setU64(dv, 36, data / (ch * bps))
+		}
+		fmtChunk(dv, 48, ch)
+		let off = 72
+		for (let e of extras) { h.set(e, off); off += e.length }
+		dv.setUint32(off, 0x64617461)                         // "data"
+		dv.setUint32(off + 4, rf64 ? 0xFFFFFFFF : data, true)
+		return h
+	}
+
+	function fmtChunk(dv, o, ch) {
+		dv.setUint32(o, 0x666D7420)                           // "fmt "
+		dv.setUint32(o + 4, 16, true)                         // chunk size
+		dv.setUint16(o + 8, fmt, true)                        // audio format
+		dv.setUint16(o + 10, ch, true)                        // channels
+		dv.setUint32(o + 12, sampleRate, true)                // sample rate
+		dv.setUint32(o + 16, sampleRate * ch * bps, true)     // byte rate
+		dv.setUint16(o + 20, ch * bps, true)                  // block align
+		dv.setUint16(o + 22, bitDepth, true)                  // bits per sample
+	}
+
+	/** Exact header for the streamed bytes (same length as the one emitted), once flushed. */
+	function head() { return exact }
+
+	// flush() → Uint8Array (complete WAV file with RIFF header; streamed: the pad byte, if any)
 	function flush() {
+		if (stream) {
+			exact = header(size)
+			let h = sent ? null : (sent = true, header(0xFFFFFFFF))
+			let pad = size & 1 ? new Uint8Array(1) : null
+			if (!h) return pad || new Uint8Array(0)
+			if (!pad) return h
+			let out = new Uint8Array(h.length + 1); out.set(h); return out
+		}
 		let out = new Uint8Array(44 + size)
 		let dv = new DataView(out.buffer)
 
@@ -93,3 +154,5 @@ export default async function wav(opts) {
 		size = 0
 	}
 }
+
+function setU64(dv, o, v) { dv.setUint32(o, v % 0x100000000, true); dv.setUint32(o + 4, Math.floor(v / 0x100000000), true) }

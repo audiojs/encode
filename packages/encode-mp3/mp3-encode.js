@@ -1,3 +1,199 @@
+var __defProp = Object.defineProperty;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __esm = (fn, res, err) => function __init() {
+  if (err) throw err[0];
+  try {
+    return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+  } catch (e) {
+    throw err = [e], e;
+  }
+};
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
+
+// meta.js
+var meta_exports = {};
+__export(meta_exports, {
+  id3Tag: () => id3Tag,
+  writeMeta: () => writeMeta
+});
+function synchsafe(b, o2) {
+  return b[o2] << 21 | b[o2 + 1] << 14 | b[o2 + 2] << 7 | b[o2 + 3];
+}
+function wSynchsafe(b, o2, v) {
+  b[o2] = v >>> 21 & 127;
+  b[o2 + 1] = v >>> 14 & 127;
+  b[o2 + 2] = v >>> 7 & 127;
+  b[o2 + 3] = v & 127;
+}
+function buildId3Frame(id, body) {
+  let out = new Uint8Array(10 + body.length);
+  out.set(TE.encode(id), 0);
+  wSynchsafe(out, 4, body.length);
+  out.set(body, 10);
+  return out;
+}
+function chapterFrames(chapters, end) {
+  if (chapters.length > 255) throw Error("mp3 chapters: at most 255 (CTOC entry count is one byte)");
+  let ids = chapters.map((_, i) => TE.encode("chp" + i + "\0"));
+  let frames = chapters.map((c, i) => {
+    let title = c.title ? buildId3Frame("TIT2", text(c.title)) : new Uint8Array(0);
+    let body2 = new Uint8Array(ids[i].length + 16 + title.length), dv = new DataView(body2.buffer), o2 = ids[i].length;
+    body2.set(ids[i]);
+    dv.setUint32(o2, Math.round(c.time * 1e3));
+    dv.setUint32(o2 + 4, i + 1 < chapters.length ? Math.round(chapters[i + 1].time * 1e3) : end);
+    dv.setUint32(o2 + 8, UNSET);
+    dv.setUint32(o2 + 12, UNSET);
+    body2.set(title, o2 + 16);
+    return buildId3Frame("CHAP", body2);
+  });
+  let toc = [TE.encode("toc\0"), Uint8Array.of(3, ids.length), ...ids];
+  let n = 0;
+  for (let b of toc) n += b.length;
+  let body = new Uint8Array(n);
+  n = 0;
+  for (let b of toc) {
+    body.set(b, n);
+    n += b.length;
+  }
+  return [buildId3Frame("CTOC", body), ...frames];
+}
+function id3Tag(meta = {}, chapters = [], end = UNSET) {
+  return buildId3v2(meta, [...chapters].sort((a, b) => a.time - b.time), end);
+}
+function buildId3v2(meta, chapters = [], end = UNSET) {
+  let frames = [];
+  for (let k in ID3_MAP_REV) {
+    let v = meta[k];
+    if (v == null || v === "") continue;
+    let id = ID3_MAP_REV[k];
+    let body;
+    if (id === "COMM" || id === "USLT") {
+      let txt = TE.encode(String(v));
+      body = new Uint8Array(1 + 3 + 1 + txt.length + 1);
+      body[0] = 3;
+      body.set(TE.encode("eng"), 1);
+      body[4] = 0;
+      body.set(txt, 5);
+      body[body.length - 1] = 0;
+    } else {
+      let enc = TE.encode(String(v));
+      body = new Uint8Array(1 + enc.length);
+      body[0] = 3;
+      body.set(enc, 1);
+    }
+    frames.push(buildId3Frame(id, body));
+  }
+  if (meta.pictures) {
+    for (let p of meta.pictures) {
+      let mime = TE.encode((p.mime || "image/jpeg") + "\0");
+      let desc = TE.encode((p.description || "") + "\0");
+      let body = new Uint8Array(1 + mime.length + 1 + desc.length + p.data.length);
+      body[0] = 3;
+      let pos2 = 1;
+      body.set(mime, pos2);
+      pos2 += mime.length;
+      body[pos2++] = p.type ?? 3;
+      body.set(desc, pos2);
+      pos2 += desc.length;
+      body.set(p.data, pos2);
+      frames.push(buildId3Frame("APIC", body));
+    }
+  }
+  if (chapters.length) frames.push(...chapterFrames(chapters, end));
+  if (!frames.length) return null;
+  let totalFrameSize = frames.reduce((n, f) => n + f.length, 0);
+  let out = new Uint8Array(10 + totalFrameSize);
+  out[0] = 73;
+  out[1] = 68;
+  out[2] = 51;
+  out[3] = 4;
+  out[4] = 0;
+  out[5] = 0;
+  wSynchsafe(out, 6, totalFrameSize);
+  let pos = 10;
+  for (let f of frames) {
+    out.set(f, pos);
+    pos += f.length;
+  }
+  return out;
+}
+function stripMp3Tags(bytes) {
+  let start = 0, end = bytes.length;
+  if (bytes.length >= 10 && bytes[0] === 73 && bytes[1] === 68 && bytes[2] === 51) {
+    start = 10 + synchsafe(bytes, 6);
+  }
+  if (bytes.length >= 128 && bytes[end - 128] === 84 && bytes[end - 127] === 65 && bytes[end - 126] === 71) {
+    end -= 128;
+  }
+  return bytes.subarray(start, end);
+}
+function duration(b) {
+  const RATE = [[11025, 12e3, 8e3], null, [22050, 24e3, 16e3], [44100, 48e3, 32e3]];
+  const KBPS1 = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320];
+  const KBPS2 = [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160];
+  let samples = 0, rate = 0;
+  for (let o2 = 0; o2 + 4 <= b.length; ) {
+    if (b[o2] !== 255 || (b[o2 + 1] & 224) !== 224) {
+      o2++;
+      continue;
+    }
+    let v = b[o2 + 1] >> 3 & 3, br = b[o2 + 2] >> 4, sr = b[o2 + 2] >> 2 & 3, pad = b[o2 + 2] >> 1 & 1;
+    if (v === 1 || br === 0 || br === 15 || sr === 3 || (b[o2 + 1] >> 1 & 3) !== 1) {
+      o2++;
+      continue;
+    }
+    rate = RATE[v][sr];
+    let mpeg1 = v === 3, kbps = (mpeg1 ? KBPS1 : KBPS2)[br];
+    samples += mpeg1 ? 1152 : 576;
+    o2 += Math.floor((mpeg1 ? 144e3 : 72e3) * kbps / rate) + pad;
+  }
+  return rate ? Math.round(samples / rate * 1e3) : 0;
+}
+function writeMeta(bytes, { meta = {}, chapters = [] } = {}) {
+  let audio = stripMp3Tags(bytes);
+  let tag = id3Tag(meta, chapters, chapters.length ? duration(audio) : UNSET);
+  if (!tag) return audio;
+  let out = new Uint8Array(tag.length + audio.length);
+  out.set(tag, 0);
+  out.set(audio, tag.length);
+  return out;
+}
+var TE, ID3_MAP_REV, UNSET, text;
+var init_meta = __esm({
+  "meta.js"() {
+    TE = new TextEncoder();
+    ID3_MAP_REV = {
+      title: "TIT2",
+      artist: "TPE1",
+      album: "TALB",
+      albumartist: "TPE2",
+      composer: "TCOM",
+      genre: "TCON",
+      year: "TDRC",
+      track: "TRCK",
+      disc: "TPOS",
+      bpm: "TBPM",
+      key: "TKEY",
+      copyright: "TCOP",
+      isrc: "TSRC",
+      publisher: "TPUB",
+      software: "TENC",
+      comment: "COMM",
+      lyrics: "USLT"
+    };
+    UNSET = 4294967295;
+    text = (s) => {
+      let e = TE.encode(String(s)), b = new Uint8Array(1 + e.length);
+      b[0] = 3;
+      b.set(e, 1);
+      return b;
+    };
+  }
+});
+
 // ../../node_modules/@swc/helpers/esm/_define_property.js
 function _define_property(obj, key, value) {
   if (key in obj) {
@@ -190,17 +386,31 @@ function o() {
 
 // src/mp3-encode.src.js
 async function mp3(opts) {
-  let { sampleRate, bitrate = 128, quality, channels } = opts;
+  let { sampleRate, bitrate = 128, quality, channels, stream, meta, chapters } = opts;
   if (!channels || channels < 1 || channels > 2) channels = 2;
+  let id3 = stream && (meta || chapters?.length) ? await Promise.resolve().then(() => (init_meta(), meta_exports)) : null;
+  let tag = id3?.id3Tag(meta, chapters), fed = 0, exact = null;
   let encoder = await o();
   let cfg = { sampleRate, channels };
   if (quality != null) cfg.vbrQuality = quality;
   else cfg.bitrate = bitrate;
   encoder.configure(cfg);
   const CHUNK = 1152 * 1024;
-  return { encode, flush, free };
-  function encode(ch) {
+  return { encode: (ch) => lead(frames(ch)), flush, free, head };
+  function lead(b) {
+    if (!tag) return b;
+    let out = new Uint8Array(tag.length + b.length);
+    out.set(tag);
+    out.set(b, tag.length);
+    tag = null;
+    return out;
+  }
+  function head() {
+    return exact;
+  }
+  function frames(ch) {
     let n = ch[0].length;
+    fed += n;
     if (n <= CHUNK) {
       let raw = encoder.encode(ch);
       return new Uint8Array(raw);
@@ -223,8 +433,9 @@ async function mp3(opts) {
     return out;
   }
   function flush() {
-    let raw = encoder.finalize();
-    return new Uint8Array(raw);
+    let raw = lead(new Uint8Array(encoder.finalize()));
+    if (id3 && chapters?.length) exact = id3.id3Tag(meta, chapters, Math.round(fed / sampleRate * 1e3));
+    return raw;
   }
   function free() {
     encoder = null;

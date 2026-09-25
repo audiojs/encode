@@ -289,19 +289,51 @@ t('mp4-encode: MP3 frame splitter skips ID3 and matches ffmpeg-authored frame co
 	is(split.length, trk.samples.length)
 })
 
-t('mp4-encode: aac codec throws its own clear error outside a WebCodecs environment', async () => {
-	if (typeof AudioEncoder !== 'undefined') return // browser: skip, WebCodecs path is exercised for real there
-	await rejects(() => mp4({ sampleRate: 44100, channels: 2, codec: 'aac' }), /WebCodecs|AudioEncoder/i)
+t('mp4-encode: aac encodes anywhere (FDK where WebCodecs lacks it), gapless: the duration is the input\'s', async () => {
+	for (let [profile, bitrate] of [['lc', 128], ['he', 48]]) {
+		let enc = await mp4({ sampleRate: 44100, channels: 2, codec: 'aac', profile, bitrate })
+		let x = sine(44100, 440, 1)
+		await enc.encode([x, x])
+		let file = await enc.flush()
+		let info = ffprobe(writeTmp(file, '.m4a'), ['-show_streams', '-show_format'])
+		is(info.streams[0].codec_name, 'aac', profile)
+		almost(+info.format.duration, 1, 0.001, `${profile}: priming and padding trimmed (elst)`)
+	}
 })
 
-t('mp4-encode: default codec is flac in Node (no AudioEncoder)', async () => {
-	if (typeof AudioEncoder !== 'undefined') return
+t('mp4-encode: default codec is aac', async () => {
 	let enc = await mp4({ sampleRate: 44100, channels: 1 })
 	await enc.encode([sine(44100, 440, 0.05)])
 	let file = await enc.flush()
 	enc.free()
 	let info = ffprobe(writeTmp(file, '.mp4'), ['-show_streams'])
-	is(info.streams[0].codec_name, 'flac')
+	is(info.streams[0].codec_name, 'aac')
+})
+
+// ── fragmented (stream: true) ───────────────────────────────────────────────────────────────────
+// ISO/IEC 14496-12 §8.8: ftyp + moov (mvex) first, then moof+mdat fragments as units arrive; ffprobe
+// is the reference reader. FLAC's STREAMINFO is only final at the end: head() rewrites the init segment.
+
+t('mp4-encode: stream: true writes a fragmented file as it encodes, every codec', async () => {
+	let x = sine(44100, 440, 3)
+	for (let codec of ['aac', 'opus', 'flac', 'mp3', 'pcm']) {
+		let enc = await mp4({ sampleRate: 44100, channels: 1, codec, stream: true, meta: { title: 'T' }, chapters: [{ time: 0, title: 'A' }, { time: 1.5, title: 'B' }] })
+		let parts = [], early = 0
+		for (let i = 0; i < x.length; i += 4096) { let b = await enc.encode([x.subarray(i, i + 4096)]); if (b.length) early++; parts.push(b) }
+		parts.push(await enc.flush())
+		let file = Buffer.concat(parts), h = enc.head()
+		if (h) file.set(h, 0)
+		ok(early > 0, `${codec}: fragments come out before the end`)
+		let boxes = parseBoxes(file, 0, file.length).map(b => b.type)
+		is(boxes.slice(0, 3), ['ftyp', 'moov', 'moof'], `${codec}: init segment, then fragments`)
+		ok(find(parseBoxes(file, 0, file.length), 'moov') && boxes.filter(b => b === 'moof').length === boxes.filter(b => b === 'mdat').length, `${codec}: moof+mdat pairs`)
+		let info = ffprobe(writeTmp(file, '.m4a'), ['-show_streams', '-show_format', '-show_chapters'])
+		is(info.streams[0].codec_name, codec === 'pcm' ? 'pcm_s16le' : codec, `${codec}: ffprobe reads it`)
+		almost(+info.format.duration, 3, 0.1, `${codec}: duration`)
+		is(info.format.tags?.title, 'T', `${codec}: tags`)
+		is(info.chapters.length, 2, `${codec}: chapters`)
+		is(!!h, codec === 'flac', `${codec}: head() only when the init segment learns something at the end`)
+	}
 })
 
 // ── meta round trip ─────────────────────────────────────────────────────────────────────────────

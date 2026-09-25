@@ -1,7 +1,7 @@
 {
   "name": "@audio/encode-alac",
-  "version": "1.0.0",
-  "description": "Encode PCM audio to Apple Lossless (ALAC) — pure JS port of Apple's reference encoder",
+  "version": "1.0.1",
+  "description": "Encode PCM audio to Apple Lossless (ALAC) \u2014 pure JS port of Apple's reference encoder",
   "type": "module",
   "sideEffects": false,
   "main": "alac-encode.js",
@@ -37,7 +37,7 @@
   ],
   "audio": "./audio.js",
   "dependencies": {
-    "@audio/encode-mp4": "^1.0.0"
+    "@audio/encode-mp4": "^1.1.0"
   },
   "devDependencies": {
     "tst": "^9.4.0"

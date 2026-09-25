@@ -32,6 +32,10 @@ const c = encoder.flush();
 encoder.free();
 ```
 
+### Streaming output
+
+`stream: true` with `meta`: the comment header is rewritten as the stream goes and later pages are renumbered on the fly, so tags never hold the output back.
+
 ## License
 
 [MIT](LICENSE)

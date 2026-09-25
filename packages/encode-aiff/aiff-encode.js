@@ -3,16 +3,20 @@
  * @param {Object} opts
  * @param {number} opts.sampleRate
  * @param {number} [opts.bitDepth=16] - 16 or 24
- * @returns {{ encode, flush, free }}
+ * @param {boolean} [opts.stream] - emit the header and samples as they are encoded, sizes unknown
+ *   (0xFFFFFFFF, read to the end) until head() gives the exact header; `meta` rides in an ID3 chunk
+ * @returns {{ encode, flush, free, head }}
  */
 export default async function aiff(opts) {
-	let rate = opts.sampleRate, depth = opts.bitDepth || 16
+	let rate = opts.sampleRate, depth = opts.bitDepth || 16, stream = opts.stream
 	if (depth !== 16 && depth !== 24)
 		throw Error('Unsupported bitDepth: ' + depth + ' (use 16 or 24)')
 	let bytesPerSample = depth >> 3
 	let chunks = [], totalBytes = 0, numFrames = 0, nCh = 0
+	let id3 = stream && opts.meta ? (await import('./meta.js')).id3Chunk(opts.meta) : null
+	let sent = false, exact = null
 
-	return { encode, flush, free }
+	return { encode, flush, free, head }
 
 	function encode(channels) {
 		let cn = channels.length, len = channels[0].length
@@ -46,47 +50,65 @@ export default async function aiff(opts) {
 
 		numFrames += len
 		totalBytes += buf.length
+		if (stream) {
+			if (sent) return buf
+			sent = true
+			let h = header(false), out = new Uint8Array(h.length + buf.length)
+			out.set(h); out.set(buf, h.length)
+			return out
+		}
 		chunks.push(buf)
 		return new Uint8Array(0)
 	}
 
-	function flush() {
-		if (!nCh) nCh = 1
-
-		let dataSize = totalBytes
-		let ssndSize = dataSize + 8
-		let formSize = 4 + 26 + 8 + ssndSize // AIFF(4) + COMM(8+18) + SSND(8+ssndSize)
-		let hdrLen = 12 + 26 + 16 // FORM(12) + COMM(8+18) + SSND hdr(8+4+4)
-
-		let hdr = new Uint8Array(hdrLen)
-		let dv = new DataView(hdr.buffer)
-		let p = 0
+	// FORM, COMM, [ID3], SSND header. `known`: exact sizes, else 0xFFFFFFFF (unknown, read to the end)
+	function header(known) {
+		let ch = nCh || opts.channels || 1, x = id3?.length || 0
+		let hdr = new Uint8Array(12 + 26 + x + 16), dv = new DataView(hdr.buffer), p = 0
+		let ssndSize = totalBytes + 8, formSize = 4 + 26 + x + 8 + ssndSize + (totalBytes & 1)
+		let fit = known && formSize <= 0xFFFFFFFF
 
 		// FORM
-		str('FORM'); dv.setUint32(p, formSize, false); p += 4; str('AIFF')
+		str('FORM'); dv.setUint32(p, fit ? formSize : 0xFFFFFFFF, false); p += 4; str('AIFF')
 
 		// COMM
 		str('COMM'); dv.setUint32(p, 18, false); p += 4
-		dv.setInt16(p, nCh, false); p += 2
-		dv.setUint32(p, numFrames, false); p += 4
+		dv.setInt16(p, ch, false); p += 2
+		dv.setUint32(p, fit ? numFrames : 0xFFFFFFFF, false); p += 4
 		dv.setInt16(p, depth, false); p += 2
 		writeF80(dv, p, rate); p += 10
 
-		// SSND
-		str('SSND'); dv.setUint32(p, ssndSize, false); p += 4
+		// ID3 (streamed metadata), then SSND
+		if (id3) { hdr.set(id3, p); p += x }
+		str('SSND'); dv.setUint32(p, fit ? ssndSize : 0xFFFFFFFF, false); p += 4
 		dv.setUint32(p, 0, false); p += 4
 		dv.setUint32(p, 0, false); p += 4
-
-		let file = new Uint8Array(hdr.length + dataSize)
-		file.set(hdr)
-		let off = hdr.length
-		for (let c of chunks) { file.set(c, off); off += c.length }
-		return file
+		return hdr
 
 		function str(s) { for (let i = 0; i < 4; i++) hdr[p++] = s.charCodeAt(i) }
 	}
 
-	function free() { chunks = null; totalBytes = 0; numFrames = 0; nCh = 0 }
+	/** Exact header for the streamed bytes (same length as the one emitted), once flushed. */
+	function head() { return exact }
+
+	function flush() {
+		if (!nCh) nCh = opts.channels || 1
+		if (stream) {
+			exact = header(true)
+			let h = sent ? null : (sent = true, header(false)), pad = totalBytes & 1 ? new Uint8Array(1) : null
+			if (!h) return pad || new Uint8Array(0)
+			let out = new Uint8Array(h.length + (pad ? 1 : 0)); out.set(h); return out
+		}
+
+		let hdr = header(true)
+		let file = new Uint8Array(hdr.length + totalBytes + (totalBytes & 1))  // chunks pad to even
+		file.set(hdr)
+		let off = hdr.length
+		for (let c of chunks) { file.set(c, off); off += c.length }
+		return file
+	}
+
+	function free() { chunks = null }
 }
 
 // 80-bit IEEE 754 extended precision (big-endian)

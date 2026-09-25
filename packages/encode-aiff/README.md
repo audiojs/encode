@@ -32,6 +32,10 @@ encoder.free();
 
 Input is `Float32Array[]` — one array per channel. Big-endian interleaving handled automatically.
 
+### Streaming output
+
+`stream: true`: the header goes out with the first samples, sizes `0xFFFFFFFF` (read to the end), `meta` as an ID3 chunk before SSND. After `flush()`, `head()` returns the exact header to write over the start of a file.
+
 ## License
 
 [MIT](LICENSE)

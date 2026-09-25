@@ -1,33 +1,86 @@
 /**
- * AAC encoder — browser-only (WebCodecs AudioEncoder)
- * Outputs ADTS-framed AAC (.aac) via the native AudioEncoder API.
- * Requires Chromium 94+ or Safari 16+. Not available in Node or Firefox.
+ * AAC encoder — browser + Node. ADTS-framed AAC (.aac).
+ * WebCodecs AudioEncoder where the browser supports the configuration (zero bundle cost,
+ * hardware-accelerated); elsewhere (Node, Firefox) the Fraunhofer FDK AAC encoder compiled to
+ * WebAssembly, loaded on first use.
  *
  * @param {Object} opts
  * @param {number} opts.sampleRate - input sample rate (required)
- * @param {number} [opts.channels=1] - 1 or 2
+ * @param {number} [opts.channels=1] - 1 or 2 (FDK also 3-6 and 8, WAV channel order)
  * @param {number} [opts.bitrate=128] - kbps
- * @returns {Promise<{ encode, flush, free }>}
+ * @param {'lc'|'he'|'hev2'} [opts.profile='lc'] - AAC-LC, HE-AAC (SBR), HE-AACv2 (SBR + PS, stereo)
+ * @returns {Promise<{ encode, flush, free, priming, frameLength }>}
  *
  * encode(channels: Float32Array[]) -> Uint8Array (ADTS frames accumulated so far)
  * flush() -> Uint8Array (remaining ADTS frames; closes encoder)
  * free() -> void
+ * priming: encoder delay in samples, when the encoder reports it (FDK); frameLength: samples a frame
  */
-export default async function aac(opts) {
-	if (typeof AudioEncoder === 'undefined')
-		throw new Error('AAC encoding requires the WebCodecs AudioEncoder API (browser-only; not available in Node)')
+const CODEC = { lc: 'mp4a.40.2', he: 'mp4a.40.5', hev2: 'mp4a.40.29' }
 
+export default async function aac(opts) {
+	let profile = opts.profile || 'lc'
+	if (!CODEC[profile]) throw new Error(`aac: unknown profile '${profile}' (lc, he, hev2)`)
+	if (typeof AudioEncoder !== 'undefined') {
+		let s = await AudioEncoder.isConfigSupported({ codec: CODEC[profile], sampleRate: opts.sampleRate, numberOfChannels: opts.channels || 1, bitrate: (opts.bitrate || 128) * 1000 })
+		if (s.supported) return webcodecs(opts, CODEC[profile])
+	}
+	return fdk(opts, profile)
+}
+
+// ===== FDK (WebAssembly) =====
+
+const AOT = { lc: 2, he: 5, hev2: 29 }
+let fdkMod
+const getFdk = () => fdkMod ??= import('./src/fdk.wasm.js').then(m => m.default())
+
+async function fdk(opts, profile) {
+	let m = await getFdk()
+	let sr = opts.sampleRate, nch = opts.channels || 1, kbps = opts.bitrate || 128
+	let h = m._ae_create(sr, nch, kbps * 1000, AOT[profile], 0)
+	if (!h) throw new Error(`aac: FDK rejected sampleRate=${sr} channels=${nch} bitrate=${kbps} profile=${profile} (error 0x${m._ae_error().toString(16)})`)
+	let freed = false
+	return {
+		encode(channels) {
+			if (freed) throw new Error('aac: encoder already freed')
+			let n = channels[0].length
+			if (!n) return new Uint8Array(0)
+			let k = m._ae_input(h, n) >> 1, heap = m.HEAP16  // read the view after the call: memory may grow
+			for (let i = 0; i < n; i++) for (let c = 0; c < nch; c++) {
+				let v = (channels[c] || channels[0])[i]
+				heap[k++] = v <= -1 ? -32767 : v >= 1 ? 32767 : Math.round(v * 32767)
+			}
+			let r = m._ae_encode(h, n)
+			if (r < 0) throw new Error(`aac: encode failed (FDK error 0x${(-r).toString(16)})`)
+			return drain()
+		},
+		flush() {
+			if (freed) return new Uint8Array(0)
+			let r = m._ae_flush(h)
+			if (r < 0) throw new Error(`aac: flush failed (FDK error 0x${(-r).toString(16)})`)
+			let out = drain()
+			this.free()
+			return out
+		},
+		free() { if (!freed) { freed = true; m._ae_destroy(h) } },
+		priming: m._ae_delay(h),
+		frameLength: m._ae_frame_length(h),
+	}
+	function drain() {
+		let len = m._ae_output_len(h)
+		if (!len) return new Uint8Array(0)
+		let p = m._ae_output_ptr(h), out = m.HEAPU8.slice(p, p + len)
+		m._ae_output_reset(h)
+		return out
+	}
+}
+
+// ===== WebCodecs =====
+
+async function webcodecs(opts, codec) {
 	let sampleRate = opts.sampleRate
 	let nch = opts.channels || 1
 	let bitrate = (opts.bitrate || 128) * 1000
-
-	let supported = await AudioEncoder.isConfigSupported({
-		codec: 'mp4a.40.2',
-		sampleRate,
-		numberOfChannels: nch
-	})
-	if (!supported.supported)
-		throw new Error(`AAC (mp4a.40.2) is not supported in this browser at sampleRate=${sampleRate} channels=${nch}. Firefox does not support AAC encoding via WebCodecs.`)
 
 	let queue = []
 	let profile = 2     // AAC-LC (audioObjectType 2) — default before ASC arrives
@@ -50,7 +103,7 @@ export default async function aac(opts) {
 	})
 
 	encoder.configure({
-		codec: 'mp4a.40.2',
+		codec,
 		sampleRate,
 		numberOfChannels: nch,
 		bitrate

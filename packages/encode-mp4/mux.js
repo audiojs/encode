@@ -14,6 +14,10 @@
  *  - iTunSMPB gapless tag — undocumented by Apple, reverse-engineered by mp4v2/AtomicParsley
  *
  * mux({ codec, sampleRate, channels, samples, config, ... }, { brand, meta, chapters }) -> Uint8Array
+ *
+ * Fragmented (ISO/IEC 14496-12 §8.8), for a stream whose end is unknown:
+ * fragmentInit(track, opts) -> ftyp + moov (sample entry, empty tables, mvex); then
+ * fragment(track, samples, seq, time) -> moof + mdat, one per batch of access units.
  */
 import { Writer, concat, r32, w32, w64 } from './iso.js'
 import { buildUdta, itunSmpb } from './tags.js'
@@ -154,6 +158,84 @@ export function buildAudioTrak(w, plan, track, opts, { trackId, movieTimescale, 
 		})
 	})
 	return { patches }
+}
+
+// ===== fragmented =====
+
+/**
+ * Init segment of a fragmented file: ftyp + moov holding the track's sample entry, empty sample
+ * tables and mvex/trex, tags and chapters in udta. No durations: a stream's end is unknown. The
+ * priming rides in an edit list whose duration 0 spans the whole presentation (§8.6.6.3).
+ * `track` needs everything mux() does except `samples`.
+ */
+export function fragmentInit(track, opts = {}) {
+	let timescale = track.timescale ?? (track.codec === 'opus' ? 48000 : track.sampleRate)
+	let priming = track.priming ?? (track.codec === 'opus' ? (track.config?.preSkip || 0) : 0)
+	let creation = macTime(opts.creationTime || new Date())
+	let brand = opts.brand || 'M4A '
+	let w = new Writer()
+	w.box('ftyp', w => {
+		w.ascii(brand).u32(0)
+		for (let c of [...(BRAND_COMPAT[brand] || [brand]), 'iso6']) w.ascii(c)  // iso6: movie fragments
+	})
+	w.box('moov', w => {
+		buildMvhd(w, creation, 0)
+		w.box('trak', w => {
+			buildTkhd(w, creation, 0, 1)
+			if (priming) buildEdts(w, 0, priming)
+			w.box('mdia', w => {
+				buildMdhd(w, creation, timescale, 0)
+				buildHdlr(w)
+				w.box('minf', w => {
+					w.fullBox('smhd', 0, 0, w => w.u16(0).u16(0))
+					w.box('dinf', w => buildDref(w))
+					w.box('stbl', w => {
+						buildStsd(w, track, opts)
+						buildStts(w, [])
+						buildStsc(w, [])
+						w.fullBox('stsz', 0, 0, w => w.u32(0).u32(0))
+						w.fullBox('stco', 0, 0, w => w.u32(0))
+					})
+				})
+			})
+		})
+		if (opts.meta || opts.chapters?.length) w.bytes(buildUdta(opts.meta || {}, opts.chapters))
+		// trex: track 1, sample description 1, no defaults (every trun carries its own)
+		w.box('mvex', w => w.fullBox('trex', 0, 0, w => w.u32(1).u32(1).u32(0).u32(0).u32(0)))
+	})
+	return w.finish()
+}
+
+/**
+ * One fragment: moof (mfhd sequence `seq` from 1; traf: tfhd default-base-is-moof, tfdt 64-bit
+ * decode time `time`, trun with each sample's duration and size) + mdat.
+ * @returns {{ bytes: Uint8Array, ticks: number }} ticks: the fragment's duration, to add to `time`
+ */
+export function fragment(track, samples, seq, time) {
+	let dur = resolveDurations({ ...track, samples }), n = samples.length, size = totalSampleBytes(samples)
+	let w = new Writer(size + 128 + n * 8), off = 0, ticks = 0
+	let moof = w.box('moof', w => {
+		w.fullBox('mfhd', 0, 0, w => w.u32(seq))
+		w.box('traf', w => {
+			w.fullBox('tfhd', 0, 0x020000, w => w.u32(1))
+			w.fullBox('tfdt', 1, 0, w => w.u64(time))
+			w.fullBox('trun', 0, 0x000301, w => {  // data-offset, sample-duration, sample-size present
+				w.u32(n); off = w.len; w.u32(0)
+				for (let i = 0; i < n; i++) { let d = dur.get(i); ticks += d; w.u32(d).u32(samples[i].length) }
+			})
+		})
+	})
+	let body = writeMdatHeader(w, size)
+	w32(w.buf, off, body - moof)  // data_offset: from moof's first byte to the first sample
+	for (let s of samples) w.bytes(s)
+	return { bytes: w.finish(), ticks }
+}
+
+/** Media time the access units cover, in `[ticks, timescale]` — how a fragmenter sizes fragments. */
+export function unitsTime(track, samples) {
+	let dur = resolveDurations({ ...track, samples }), ticks = 0
+	for (let i = 0; i < samples.length; i++) ticks += dur.get(i)
+	return [ticks, track.timescale ?? (track.codec === 'opus' ? 48000 : track.sampleRate)]
 }
 
 // ===== duration resolution =====

@@ -114,6 +114,21 @@ function buildCueAdtl(markers, regions) {
 }
 
 /** Splice meta chunks into an encoded WAV. Returns new Uint8Array. */
+/** Metadata chunks (bext, iXML, LIST/INFO, cue + LIST/adtl), in write order. */
+export function metaChunks({ meta = {}, markers = [], regions = [] } = {}) {
+  let extras = []
+  let bext = buildBext(meta)
+  if (bext) extras.push(bext)
+  let iXML = meta.raw?.iXML
+  if (iXML) extras.push(buildChunk('iXML', TE.encode(iXML)))
+  let info = buildInfo(meta)
+  if (info) extras.push(info)
+  let { cue, adtl } = buildCueAdtl(markers, regions)
+  if (cue) extras.push(cue)
+  if (adtl) extras.push(adtl)
+  return extras
+}
+
 export function writeMeta(bytes, { meta = {}, markers = [], regions = [] } = {}) {
   if (bytes.length < 12 || fourcc(bytes, 0) !== 'RIFF' || fourcc(bytes, 8) !== 'WAVE') return bytes
 
@@ -129,16 +144,7 @@ export function writeMeta(bytes, { meta = {}, markers = [], regions = [] } = {})
     off += total
   }
 
-  let extras = []
-  let bext = buildBext(meta)
-  if (bext) extras.push(bext)
-  let iXML = meta.raw?.iXML
-  if (iXML) extras.push(buildChunk('iXML', TE.encode(iXML)))
-  let info = buildInfo(meta)
-  if (info) extras.push(info)
-  let { cue, adtl } = buildCueAdtl(markers, regions)
-  if (cue) extras.push(cue)
-  if (adtl) extras.push(adtl)
+  let extras = metaChunks({ meta, markers, regions })
 
   let total = 4  // "WAVE"
   for (let c of keep) total += c.length

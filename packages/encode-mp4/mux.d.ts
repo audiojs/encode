@@ -78,3 +78,14 @@ export interface MuxOptions {
 
 /** Mux one pre-encoded audio track into a complete MP4/M4A file: ftyp + moov + mdat. */
 export function mux(track: Mp4Track, opts?: MuxOptions): Uint8Array
+
+/** Init segment of a fragmented file (ISO/IEC 14496-12 §8.8): ftyp + moov with the sample entry,
+ *  empty sample tables and mvex/trex. `track` as for mux(), without `samples`. */
+export function fragmentInit(track: Omit<Mp4Track, 'samples'>, opts?: MuxOptions): Uint8Array
+
+/** One fragment: moof (mfhd `seq`, tfhd default-base-is-moof, tfdt `time`, trun) + mdat.
+ *  `ticks` is its duration in the track timescale, to add to `time` for the next one. */
+export function fragment(track: Omit<Mp4Track, 'samples'>, samples: Uint8Array[], seq: number, time: number): { bytes: Uint8Array, ticks: number }
+
+/** Media time access units cover: [ticks, timescale]. */
+export function unitsTime(track: Omit<Mp4Track, 'samples'>, samples: Uint8Array[]): [number, number]

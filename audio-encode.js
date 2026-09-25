@@ -9,6 +9,10 @@
  * let enc = await encode.mp3({ sampleRate: 44100, bitrate: 128 })
  * let chunk = await enc(channelData)
  * let final = await enc() // flush + free
+ *
+ * let enc = await encode.wav({ sampleRate: 44100, stream: true, meta })  // bytes as they encode
+ * ...write every enc(chunk), then enc()...
+ * let head = enc.head()   // exact header over the start (a seekable sink), or null: already exact
  */
 
 const EMPTY = new Uint8Array(0)
@@ -62,29 +66,34 @@ const META_WRITERS = {
 }
 
 // Formats that bake metadata into the encoder itself (Ogg OpusTags, WavPack APEv2, MP4 ilst) — streamed,
-// never buffered. The rest splice meta post-hoc via META_WRITERS on flush.
+// never buffered. The rest splice meta post-hoc via META_WRITERS on flush, unless `stream: true`:
+// then every codec writes its metadata into its own header, ahead of the audio, and memory stays
+// flat however long the stream runs.
 const NATIVE_META = new Set(['opus', 'wv', 'm4a', 'mp4'])
 
 function reg(name, load) {
 	encode[name] = fmt(name, async (opts) => {
-		let { meta, markers, regions, ...rest } = opts || {}
-		let hasMeta = meta || markers?.length || regions?.length
+		let { meta, markers, regions, stream, ...rest } = opts || {}
+		let hasMeta = meta || markers?.length || regions?.length || rest.chapters?.length
 		let init = (await load()).default
-		let codec = await init(NATIVE_META.has(name) && hasMeta ? { ...rest, meta } : rest)
-		// Native-meta, no post-splice writer, or no meta requested: pass through.
-		if (NATIVE_META.has(name) || !META_WRITERS[name] || !hasMeta)
-			return streamEncoder(ch => codec.encode(ch), () => codec.flush(), () => codec.free())
+		let native = stream || NATIVE_META.has(name)
+		let codec = await init(native && hasMeta ? { ...rest, meta, markers, regions, stream } : stream ? { ...rest, stream } : rest)
+		// Streamed, native-meta, no post-splice writer, or no meta requested: pass through.
+		if (native || !META_WRITERS[name] || !hasMeta)
+			return streamEncoder(ch => codec.encode(ch), () => codec.flush(), () => codec.free(), () => codec.head?.())
 		// Meta requested: buffer encoder output, splice via writeMeta on flush.
 		let writeMeta = await META_WRITERS[name]()
-		let parts = []
+		let parts = [], fed = 0
 		return streamEncoder(
-			async ch => { let b = await codec.encode(ch); if (b?.length) parts.push(b); return EMPTY },
+			async ch => { fed += ch[0].length; let b = await codec.encode(ch); if (b?.length) parts.push(b); return EMPTY },
 			async () => {
 				let f = await codec.flush(); if (f?.length) parts.push(f)
 				let total = 0; for (let p of parts) total += p.length
 				let all = new Uint8Array(total), off = 0
 				for (let p of parts) { all.set(p, off); off += p.length }
-				return writeMeta(all, { meta: meta || {}, markers: markers || [], regions: regions || [] })
+				let h = codec.head?.()
+				if (h) all.set(h, 0)
+				return writeMeta(all, { meta: meta || {}, markers: markers || [], regions: regions || [], chapters: rest.chapters || [], duration: fed / rest.sampleRate })
 			},
 			() => codec.free(),
 		)
@@ -151,7 +160,9 @@ async function wholeFile(data, opts, init) {
 	try {
 		let result = await enc(ch)
 		let flushed = await enc()
-		return merge(result, flushed)
+		let out = merge(result, flushed), h = enc.head()
+		if (h) { if (out === result || out === flushed) out = out.slice(); out.set(h, 0) }
+		return out
 	} catch (e) { enc.free(); throw e }
 }
 
@@ -178,8 +189,10 @@ function channels(data) {
  * enc()            — flush + finalize + free
  * enc.flush()      — flush without freeing
  * enc.free()       — release without flushing
+ * enc.head()       — after the end: bytes to write over the start of the output (totals the
+ *                    header could not know while streaming), or null when the output is exact
  */
-export function streamEncoder(onEncode, onFlush, onFree) {
+export function streamEncoder(onEncode, onFlush, onFree, onHead) {
 	let done = false
 	let fn = async (data) => {
 		if (data) {
@@ -206,6 +219,7 @@ export function streamEncoder(onEncode, onFlush, onFree) {
 		done = true
 		onFree?.()
 	}
+	fn.head = () => { let h = onHead?.(); return h?.length ? norm(h) : null }
 	return fn
 }
 
