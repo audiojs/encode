@@ -152,9 +152,9 @@ function duration(b) {
   }
   return rate ? Math.round(samples / rate * 1e3) : 0;
 }
-function writeMeta(bytes, { meta = {}, chapters = [] } = {}) {
+function writeMeta(bytes, { meta = {}, chapters = [], duration: sec } = {}) {
   let audio = stripMp3Tags(bytes);
-  let tag = id3Tag(meta, chapters, chapters.length ? duration(audio) : UNSET);
+  let tag = id3Tag(meta, chapters, !chapters.length ? UNSET : sec > 0 ? Math.round(sec * 1e3) : duration(audio));
   if (!tag) return audio;
   let out = new Uint8Array(tag.length + audio.length);
   out.set(tag, 0);
