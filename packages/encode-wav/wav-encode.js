@@ -146,7 +146,7 @@ function setU64(dv, o, v) { dv.setUint32(o, v % 0x100000000, true); dv.setUint32
 
 // Interleave channels into little-endian PCM. One strided loop per channel and sample type;
 // typed-array views write native (little-endian) order, DataView only on a big-endian host.
-// Integer PCM: clamp to [-1, 1], scale by 2^(bits-1) - 1, round half up — floor(x + 0.5), several times
+// Integer PCM: clamp to [-1, 1], scale by 2^(bits-1) - 1, round half up as floor(x + 0.5), several times
 // faster than V8's Math.round and equal to it for every float32 sample (differs only at 0.5 - 2^-54).
 const LE = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1
 
