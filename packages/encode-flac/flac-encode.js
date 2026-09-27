@@ -49,11 +49,10 @@ export default async function flac(opts) {
 		if (!inited) init(channels.length)
 		let len = channels[0].length
 		let interleaved = new Int32Array(len * nch)
-		for (let i = 0; i < len; i++) {
-			for (let c = 0; c < nch; c++) {
-				let s = Math.round(channels[c][i] * max)
-				interleaved[i * nch + c] = s < min ? min : s > max ? max : s
-			}
+		// round half up as floor(x + 0.5): several times faster than V8's Math.round, equal for every float32 sample
+		for (let c = 0; c < nch; c++) for (let x = channels[c], i = 0, o = c; i < len; i++, o += nch) {
+			let s = Math.floor(x[i] * max + 0.5)
+			interleaved[o] = s < min ? min : s > max ? max : s
 		}
 		if (!Flac.FLAC__stream_encoder_process_interleaved(enc, interleaved, len))
 			throw Error('FLAC encoding failed')

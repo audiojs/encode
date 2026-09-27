@@ -48,7 +48,7 @@ async function fdk(opts, profile) {
 			let k = m._ae_input(h, n) >> 1, heap = m.HEAP16  // read the view after the call: memory may grow
 			for (let i = 0; i < n; i++) for (let c = 0; c < nch; c++) {
 				let v = (channels[c] || channels[0])[i]
-				heap[k++] = v <= -1 ? -32767 : v >= 1 ? 32767 : Math.round(v * 32767)
+				heap[k++] = v <= -1 ? -32767 : v >= 1 ? 32767 : Math.floor(v * 32767 + 0.5)  // floor(x + 0.5): Math.round for every float32 sample, several times faster in V8
 			}
 			let r = m._ae_encode(h, n)
 			if (r < 0) throw new Error(`aac: encode failed (FDK error 0x${(-r).toString(16)})`)

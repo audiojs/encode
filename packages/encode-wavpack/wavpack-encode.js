@@ -77,7 +77,7 @@ export default async function wavpack(opts = {}) {
 			for (let i = 0; i < n; i++) for (let c = 0; c < channels; c++) {
 				let v = chData[c][i]
 				let s = v < 0 ? v * div : v * max
-				i32[k++] = s < -div ? -div : s > max ? max : Math.round(s)
+				i32[k++] = s < -div ? -div : s > max ? max : Math.floor(s + 0.5)  // floor(x + 0.5): Math.round for every float32 sample, several times faster in V8
 			}
 		}
 		if (!m._we_pack(h, n)) throw Error(readError(m, h))

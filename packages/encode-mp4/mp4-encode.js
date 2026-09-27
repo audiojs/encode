@@ -336,7 +336,8 @@ function pcmFormat(bitDepth) {
 	return { bits: 16, float: false, be: false }
 }
 
-function clampInt(v, max) { let s = Math.round(v * (max + 1)); return s > max ? max : s < -max - 1 ? -max - 1 : s }
+// floor(x + 0.5): Math.round for every float32 sample, several times faster in V8
+function clampInt(v, max) { let s = Math.floor(v * (max + 1) + 0.5); return s > max ? max : s < -max - 1 ? -max - 1 : s }
 
 function interleave(channels, fmt) {
 	let nch = channels.length, n = channels[0].length, bps = fmt.bits >> 3

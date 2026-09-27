@@ -33,29 +33,7 @@ export default async function wav(opts) {
 		if (!nch) nch = ch.length
 		let len = ch[0].length
 		let buf = new Uint8Array(len * nch * bps)
-		let dv = new DataView(buf.buffer)
-		let off = 0
-
-		for (let i = 0; i < len; i++) {
-			for (let c = 0; c < nch; c++) {
-				let s = ch[c][i]
-				if (float) {
-					dv.setFloat32(off, s, true)
-				} else {
-					// clamp to [-1, 1], scale to signed int
-					s = s < -1 ? -1 : s > 1 ? 1 : s
-					if (bitDepth === 24) {
-						let v = Math.round(s * 0x7FFFFF)
-						buf[off] = v & 0xFF
-						buf[off + 1] = (v >> 8) & 0xFF
-						buf[off + 2] = (v >> 16) & 0xFF
-					} else {
-						dv.setInt16(off, Math.round(s * 0x7FFF), true)
-					}
-				}
-				off += bps
-			}
-		}
+		;(float ? f32 : bitDepth === 24 ? i24 : i16)(ch, nch, len, buf)
 
 		size += buf.length
 		if (stream) {
@@ -165,3 +143,45 @@ export default async function wav(opts) {
 }
 
 function setU64(dv, o, v) { dv.setUint32(o, v % 0x100000000, true); dv.setUint32(o + 4, Math.floor(v / 0x100000000), true) }
+
+// Interleave channels into little-endian PCM. One strided loop per channel and sample type;
+// typed-array views write native (little-endian) order, DataView only on a big-endian host.
+// Integer PCM: clamp to [-1, 1], scale by 2^(bits-1) - 1, round half up — floor(x + 0.5), several times
+// faster than V8's Math.round and equal to it for every float32 sample (differs only at 0.5 - 2^-54).
+const LE = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1
+
+function i16(ch, nch, len, buf) {
+	if (!LE) {
+		let dv = new DataView(buf.buffer)
+		for (let c = 0; c < nch; c++) for (let x = ch[c], i = 0, o = c * 2; i < len; i++, o += nch * 2) {
+			let s = x[i]
+			dv.setInt16(o, Math.floor((s < -1 ? -1 : s > 1 ? 1 : s) * 0x7FFF + 0.5), true)
+		}
+		return
+	}
+	let out = new Int16Array(buf.buffer, 0, len * nch)
+	for (let c = 0; c < nch; c++) for (let x = ch[c], i = 0, o = c; i < len; i++, o += nch) {
+		let s = x[i]
+		out[o] = Math.floor((s < -1 ? -1 : s > 1 ? 1 : s) * 0x7FFF + 0.5)
+	}
+}
+
+function i24(ch, nch, len, buf) {
+	for (let c = 0; c < nch; c++) for (let x = ch[c], i = 0, o = c * 3; i < len; i++, o += nch * 3) {
+		let s = x[i]
+		let v = Math.floor((s < -1 ? -1 : s > 1 ? 1 : s) * 0x7FFFFF + 0.5)
+		buf[o] = v & 0xFF
+		buf[o + 1] = (v >> 8) & 0xFF
+		buf[o + 2] = (v >> 16) & 0xFF
+	}
+}
+
+function f32(ch, nch, len, buf) {
+	if (!LE) {
+		let dv = new DataView(buf.buffer)
+		for (let c = 0; c < nch; c++) for (let x = ch[c], i = 0, o = c * 4; i < len; i++, o += nch * 4) dv.setFloat32(o, x[i], true)
+		return
+	}
+	let out = new Float32Array(buf.buffer, 0, len * nch)
+	for (let c = 0; c < nch; c++) for (let x = ch[c], i = 0, o = c; i < len; i++, o += nch) out[o] = x[i]
+}

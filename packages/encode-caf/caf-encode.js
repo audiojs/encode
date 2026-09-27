@@ -40,7 +40,7 @@ export default async function caf(opts) {
 				for (let c = 0; c < cn; c++) {
 					let s = channels[c][i]
 					s = s < -1 ? -1 : s > 1 ? 1 : s
-					dv.setInt16(pos, Math.round(s * 0x7FFF), false)
+					dv.setInt16(pos, Math.floor(s * 0x7FFF + 0.5), false)  // floor(x + 0.5): Math.round for every float32 sample, several times faster in V8
 					pos += 2
 				}
 			}
