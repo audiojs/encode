@@ -301,6 +301,44 @@ t('mp4-encode: aac encodes anywhere (FDK where WebCodecs lacks it), gapless: the
 	}
 })
 
+t('mp4-encode: the edit list presents the input to the sample: movie timescale = sample rate', async () => {
+	// ISO/IEC 14496-12 §8.6.6: the edit's duration counts in the movie timescale; in milliseconds 100003 samples read 100019
+	for (let [codec, sampleRate, n] of [['aac', 44100, 100003], ['aac', 48000, 48001], ['opus', 48000, 100003]]) {
+		let enc = await mp4({ sampleRate, channels: 1, codec })
+		await enc.encode([Float32Array.from({ length: n }, (_, i) => 0.5 * Math.sin(2 * Math.PI * 440 * i / sampleRate))])
+		let file = await enc.flush()
+		let top = parseBoxes(file, 0, file.length), trak = findPath(top, 'moov', 'trak'), body = n => file.subarray(n.bodyStart + 4)
+		let mvhd = body(findPath(top, 'moov', 'mvhd')), mdhd = body(findPath(trak.children, 'mdia', 'mdhd')), elst = body(findPath(trak.children, 'edts', 'elst'))
+		let r32 = (b, o) => b[o] * 2 ** 24 + (b[o + 1] << 16) + (b[o + 2] << 8) + b[o + 3]
+		is(r32(mvhd, 8), r32(mdhd, 8), `${codec} ${sampleRate}: movie timescale = media timescale`)
+		is(r32(elst, 4) * r32(mdhd, 8) / r32(mvhd, 8), n * r32(mdhd, 8) / sampleRate, `${codec} ${sampleRate}: edit presents ${n} samples`)
+	}
+})
+
+// encode-mp3 leads with LAME's Info frame, which holds no audio: as a sample ffmpeg played it as 1152 samples of
+// silence. The samples leave it out, and its LAME tag's delay and padding set the edit list: the delay plus the
+// decoder's 529 (ffmpeg's own MP3-in-MP4 starts at 1105). ffmpeg honours the edit's start, not its end: its length is
+// checked by ffprobe. The source is a chirp (100 Hz up 1950 Hz/s): one correlation peak, where a sine has one a period.
+t('mp4-encode: mp3 – the Info frame stays out, its LAME delay and padding make the edit list', async () => {
+	let lag = (src, out) => { // out[i + lag] ≈ src[i]
+		let best = -Infinity, bl = 0
+		for (let d = -2500; d <= 2500; d++) { let s = 0; for (let i = 3000; i < 9000; i++) s += src[i] * (out[i + d] || 0); if (s > best) best = s, bl = d }
+		return bl
+	}
+	for (let [sampleRate, channels, n] of [[44100, 1, 44137], [48000, 2, 30001], [22050, 1, 20000]]) {
+		let x = Float32Array.from({ length: n }, (_, i) => { let t = i / sampleRate; return 0.4 * Math.sin(2 * Math.PI * (100 * t + 1950 * t * t)) })
+		let enc = await mp4({ sampleRate, channels, codec: 'mp3' }), id = `${sampleRate} Hz ×${channels}`
+		await enc.encode(Array(channels).fill(x))
+		let file = await enc.flush(), [trk] = readTracks(file), first = trk.samples[0]
+		ok(!/Info|Xing/.test(String.fromCharCode(...first.subarray(0, 40))), id + ': the first sample is audio')
+		let out = (await decodeMp4(file)).channelData[0]
+		is(out.length, n, id + ': decode-mp4 length')
+		is(lag(x, out), 0, id + ': decode-mp4 onset')
+		is(+ffprobe(writeTmp(file, '.m4a'), ['-show_streams']).streams[0].duration_ts, n, id + ': ffprobe duration')
+		is(lag(x, deinterleave(ffmpegDecodeF32(file), channels)[0]), 0, id + ': ffmpeg onset')
+	}
+})
+
 t('mp4-encode: default codec is aac', async () => {
 	let enc = await mp4({ sampleRate: 44100, channels: 1 })
 	await enc.encode([sine(44100, 440, 0.05)])

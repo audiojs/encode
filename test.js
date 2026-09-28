@@ -63,6 +63,19 @@ t('mp3 round-trip', async () => {
 	almost(rms(dec.channelData[0]), rms(channelData[0]), 0.05, 'rms within lossy tolerance')
 })
 
+t('mp3 gapless: decodes to the source length, at its timing (LAME tag delay and padding)', async () => {
+	let { channelData, sampleRate } = await getLena()
+	let x = channelData[0].subarray(0, 100003)
+	for (let o of [{ bitrate: 128 }, { quality: 2 }]) {
+		let dec = (await decode(await encode.mp3([x], { sampleRate, ...o }))).channelData[0]
+		is(dec.length, x.length, `${JSON.stringify(o)}: length`)
+		// no lag: the decoded signal lines up with the source (correlation peaks at 0 within ±600 samples)
+		let best = -1, lag = null
+		for (let d = -600; d <= 600; d++) { let s = 0; for (let i = 20000; i < 60000; i++) s += x[i] * dec[i + d]; if (s > best) best = s, lag = d }
+		is(lag, 0, `${JSON.stringify(o)}: no lag`)
+	}
+})
+
 t('ogg round-trip', async () => {
 	let { channelData, sampleRate } = await getLena()
 	let buf = await encode.ogg(channelData, { sampleRate, channels: 1, quality: 5 })
@@ -368,6 +381,14 @@ t('stream: with `frames` (the exact length, known upfront) the streamed header i
 		let { out, head } = await streamed(fmt, ch, { sampleRate, frames: ch[0].length, ...opts })
 		let whole = await encode[fmt](ch, { sampleRate, ...opts })
 		if (fmt === 'flac') { ok(head && out.subarray(8, 26).every((b, i) => b === whole[8 + i] || i >= 4 && i < 10), 'flac: sample count upfront, MD5 at the end'); continue }
+		// mp3: the LAME tag's frame count and padding are exact upfront (gapless unpatched); its byte count, TOC
+		// and CRCs follow the audio, so head() completes them
+		if (fmt === 'mp3') {
+			is((await decode(out.slice())).channelData[0].length, ch[0].length, 'mp3: unpatched, decodes to the exact length')
+			out.set(head, 0)
+			ok(out.length === whole.length && out.every((b, i) => b === whole[i]), 'mp3: patched ≡ whole-file')
+			continue
+		}
 		is(head, null, `${fmt}: nothing to patch`)
 		ok(out.length === whole.length && out.every((b, i) => b === whole[i]), `${fmt} ${JSON.stringify(opts).slice(0, 30)}: ≡ whole-file, unpatched`)
 	}

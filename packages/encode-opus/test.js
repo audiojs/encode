@@ -1,6 +1,7 @@
 import t, { is, ok } from 'tst'
 import opus from './opus-encode.js'
 import decode from '@audio/decode'
+import { execFileSync } from 'node:child_process'
 
 function sine(rate, freq, dur) {
 	let n = Math.round(rate * dur), d = new Float32Array(n)
@@ -85,6 +86,41 @@ t('meta tags in OpusTags', async () => {
 	let text = new TextDecoder().decode(buf.subarray(0, 400))
 	ok(text.includes('TITLE=Hare Krishna'))
 	ok(text.includes('ARTIST=Prabhupada'))
+})
+
+// Pages hold up to a second of packets (libogg closes a page past 4 KB; opusenc's max page delay is 1 s):
+// one packet per page spent 27 header bytes per 20 ms, a 64 kbps file ran at 76 kbps.
+t('pages hold many packets: the file runs at its bitrate', async () => {
+	let x = sine(48000, 440, 10)
+	for (let kbps of [32, 64]) {
+		let enc = await opus({ sampleRate: 48000, bitrate: kbps })
+		let a = enc.encode([x]), b = enc.flush(), buf = new Uint8Array(a.length + b.length)
+		buf.set(a); buf.set(b, a.length)
+		let pages = 0, packets = 0
+		for (let o = 0; o + 27 <= buf.length;) {
+			let n = buf[o + 26], len = 27 + n
+			for (let i = 0; i < n; i++) { len += buf[o + 27 + i]; if (buf[o + 27 + i] < 255) packets++ }
+			pages++; o += len
+		}
+		let rate = buf.length * 8 / 10 / 1000
+		ok(packets >= 500 && packets / (pages - 2) >= 20, `${kbps} kbps: ${packets} packets in ${pages} pages`)
+		ok(rate < kbps * 1.05, `${kbps} kbps: file at ${rate.toFixed(1)} kbps`)
+		is((await decode(buf)).channelData[0].length, x.length, `${kbps} kbps: decodes to the input length`)
+	}
+})
+
+// A flush whose last packet filled a page wrote an empty EOS page with a granule below the page before it: the end
+// trim was lost and 47000 samples decoded as 47688. Silence packets are tiny, so the 50-packet page limit lands on
+// the last packet at 47000, 47500 and 95000; the sine lands on the 4 KB limit at 46000.
+t('the last packet filling a page keeps the end trim', async () => {
+	let ffmpeg = true
+	try { execFileSync('ffmpeg', ['-version'], { stdio: 'ignore' }) } catch { ffmpeg = false }
+	for (let [n, kbps, x] of [[47000, 32], [47500, 32], [95000, 32], [47000, 64], [95000, 64], [46000, 32, sine(48000, 440, 46000 / 48000)]]) {
+		let enc = await opus({ sampleRate: 48000, bitrate: kbps })
+		let buf = concat([enc.encode([x || new Float32Array(n)]), enc.flush()]), id = `${n} ${x ? 'sine' : 'zeros'} at ${kbps} kbps`
+		is((await decode(buf)).channelData[0].length, n, id)
+		if (ffmpeg) is(execFileSync('ffmpeg', ['-v', 'error', '-i', 'pipe:0', '-f', 'f32le', 'pipe:1'], { input: buf }).length / 4, n, id + ': ffmpeg')
+	}
 })
 
 t('bad options throw', async () => {

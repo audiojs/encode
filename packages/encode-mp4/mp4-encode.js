@@ -276,22 +276,30 @@ export function splitFlacFrames(buf) {
 }
 
 // ===== MP3 =====
+// encode-mp3 leads with LAME's Info frame: no audio, but its tag holds the encoder delay and padding. The samples
+// leave it out (ffmpeg played it as a frame of silence); the edit list trims the delay plus the decoder's own 529
+// (the synthesis filterbank's 528 + 1, as LAME and ffmpeg count it: ffmpeg's MP3-in-MP4 starts at 1105).
+const MP3_DECODER_DELAY = 529
 
 async function mp3Codec(opts) {
 	let init = (await import('@audio/encode-mp3')).default
 	let nch = opts.channels || 1
 	let enc = await init({ sampleRate: opts.sampleRate, channels: nch, bitrate: opts.bitrate })
-	let pending = EMPTY
+	let pending = EMPTY, lame = null
 	const units = bytes => {
 		let buf = pending.length ? concat([pending, bytes]) : bytes, f = splitMp3Frames(buf), used = 0
+		lame ??= lameTag(buf) // the placeholder: the delay is known upfront, the padding at the end
 		for (let x of f) used = x.byteOffset - buf.byteOffset + x.length
 		pending = buf.subarray(used).slice()
 		return f
 	}
 	return {
 		push(channels) { return units(enc.encode(channels)) },
-		async end() { let e = enc, u = units(await e.flush()); e.free(); return u },
-		track: () => ({ codec: 'mp3', sampleRate: opts.sampleRate, channels: nch, bitrate: opts.bitrate }),
+		async end() { let e = enc, u = units(await e.flush()); lame = lameTag(e.head?.()) ?? lame; e.free(); return u },
+		track: () => ({
+			codec: 'mp3', sampleRate: opts.sampleRate, channels: nch, bitrate: opts.bitrate,
+			...lame && { priming: lame.delay + MP3_DECODER_DELAY, padding: Math.max(0, lame.padding - MP3_DECODER_DELAY) }
+		}),
 		free() { enc.free() },
 	}
 }
@@ -311,21 +319,42 @@ function mp3FrameLen(buf, pos) {
 	return Math.floor((version === 3 ? 144 : 72) * br * 1000 / sr) + pad
 }
 
-/** Split a concatenated MP3 stream into frames, skipping a leading ID3v2 tag if present. */
+/** Split a concatenated MP3 stream into frames, skipping a leading ID3v2 tag and Xing/Info frame if present. */
 export function splitMp3Frames(buf) {
-	let pos = 0
-	if (buf.length >= 10 && buf[0] === 0x49 && buf[1] === 0x44 && buf[2] === 0x33) {
-		let size = ((buf[6] & 0x7f) << 21) | ((buf[7] & 0x7f) << 14) | ((buf[8] & 0x7f) << 7) | (buf[9] & 0x7f)
-		pos = 10 + size
-	}
+	let pos = id3Size(buf)
 	let frames = []
 	while (pos < buf.length) {
 		let flen = mp3FrameLen(buf, pos)
 		if (!flen || pos + flen > buf.length) break
-		frames.push(buf.subarray(pos, pos + flen))
+		if (frames.length || xingAt(buf, pos) < 0) frames.push(buf.subarray(pos, pos + flen))
 		pos += flen
 	}
 	return frames
+}
+
+function id3Size(buf) {
+	if (buf.length < 10 || buf[0] !== 0x49 || buf[1] !== 0x44 || buf[2] !== 0x33) return 0
+	return 10 + (((buf[6] & 0x7f) << 21) | ((buf[7] & 0x7f) << 14) | ((buf[8] & 0x7f) << 7) | (buf[9] & 0x7f))
+}
+
+// the 'Xing' (VBR) or 'Info' (CBR) id right after the side info of the frame at `pos`, where ffmpeg's mp3 demuxer finds
+// it; the side info is all zero, the frame holds no audio. -1 if absent
+function xingAt(buf, pos) {
+	let mpeg1 = ((buf[pos + 1] >> 3) & 3) === 3, mono = buf[pos + 3] >> 6 === 3
+	let x = pos + 4 + (mpeg1 ? (mono ? 17 : 32) : (mono ? 9 : 17)), id = String.fromCharCode(...buf.subarray(x, x + 4))
+	return (id === 'Xing' || id === 'Info') && !buf.subarray(pos + 4, x).some(b => b) ? x : -1
+}
+
+/** The LAME tag of a leading Xing/Info frame (after an ID3v2 tag if present): { delay, padding } in samples, or null.
+ *  The tag follows the Xing fields its flags declare (frames 4, bytes 4, TOC 100, quality 4 bytes), as LAME writes it. */
+function lameTag(buf) {
+	let pos = buf ? id3Size(buf) : 0, flen = buf && pos + 4 <= buf.length ? mp3FrameLen(buf, pos) : 0
+	if (!flen || pos + flen > buf.length) return null
+	let x = xingAt(buf, pos)
+	if (x < 0) return null
+	let f = buf[x + 7], l = x + 8 + (f & 1 ? 4 : 0) + (f & 2 ? 4 : 0) + (f & 4 ? 100 : 0) + (f & 8 ? 4 : 0)
+	if (!/^(LAME|Lav[fc])/.test(String.fromCharCode(...buf.subarray(l, l + 4))) || l + 24 > pos + flen) return null
+	return { delay: (buf[l + 21] << 4) | (buf[l + 22] >> 4), padding: ((buf[l + 22] & 15) << 8) | buf[l + 23] }
 }
 
 // ===== PCM =====

@@ -100,7 +100,7 @@ export default async function qoa(opts) {
 					let lms = LMS(lmses[c].history, lmses[c].weights), table = qoa_dequant_tab[sf], q = [], err = 0
 					for (let i = 0; i < sliceLen; i++) {
 						let v = x[s + i]
-						let sample = qoa_clamp(Math.floor(Math.fround(v < 0 ? v * 32768 : v * 32767)), -32768, 32767)
+						let sample = qoa_clamp(Math.floor(v * 32768 + 0.5), -32768, 32767) // round(x · 2^15): the decoders divide by 2^15
 						let predicted = qoa_lms_predict(lms.weights, lms.history)
 						let residual = sample - predicted
 						let scaled = (residual * RECIPROCAL[sf] + (1 << 15)) >> 16

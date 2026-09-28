@@ -1,6 +1,6 @@
 {
   "name": "@audio/encode-wavpack",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Encode PCM audio samples to WavPack (.wv) with libwavpack WASM",
   "type": "module",
   "main": "wavpack-encode.js",
@@ -55,7 +55,7 @@
   },
   "devDependencies": {
     "tst": "^9.4.0",
-    "@audio/decode-wavpack": "^1.0.0"
+    "@audio/decode-wavpack": "^2.0.0"
   },
   "audio": "./audio.js",
   "sideEffects": false,

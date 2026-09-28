@@ -146,30 +146,35 @@ function setU64(dv, o, v) { dv.setUint32(o, v % 0x100000000, true); dv.setUint32
 
 // Interleave channels into little-endian PCM. One strided loop per channel and sample type;
 // typed-array views write native (little-endian) order, DataView only on a big-endian host.
-// Integer PCM: clamp to [-1, 1], scale by 2^(bits-1) - 1, round half up as floor(x + 0.5), several times
-// faster than V8's Math.round and equal to it for every float32 sample (differs only at 0.5 - 2^-54).
+// Integer PCM: scale by 2^(bits-1), round half up as floor(x + 0.5), several times faster than V8's
+// Math.round and equal to it for every float32 sample (differs only at 0.5 - 2^-54), clip to the codes.
 const LE = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1
 
+// Float to integer PCM: round(x · 2^(bits-1)), clipped to the codes (ffmpeg, libsndfile; the family's decoders
+// divide by 2^(bits-1)), so decode → encode returns every code. floor(x + 0.5): Math.round for every float32
+// sample, several times faster in V8.
+function q16(s) { let v = Math.floor(s * 0x8000 + 0.5); return v > 0x7FFF ? 0x7FFF : v < -0x8000 ? -0x8000 : v }
 function i16(ch, nch, len, buf) {
 	if (!LE) {
 		let dv = new DataView(buf.buffer)
 		for (let c = 0; c < nch; c++) for (let x = ch[c], i = 0, o = c * 2; i < len; i++, o += nch * 2) {
 			let s = x[i]
-			dv.setInt16(o, Math.floor((s < -1 ? -1 : s > 1 ? 1 : s) * 0x7FFF + 0.5), true)
+			dv.setInt16(o, q16(s), true)
 		}
 		return
 	}
 	let out = new Int16Array(buf.buffer, 0, len * nch)
 	for (let c = 0; c < nch; c++) for (let x = ch[c], i = 0, o = c; i < len; i++, o += nch) {
 		let s = x[i]
-		out[o] = Math.floor((s < -1 ? -1 : s > 1 ? 1 : s) * 0x7FFF + 0.5)
+		out[o] = q16(s)
 	}
 }
 
 function i24(ch, nch, len, buf) {
 	for (let c = 0; c < nch; c++) for (let x = ch[c], i = 0, o = c * 3; i < len; i++, o += nch * 3) {
 		let s = x[i]
-		let v = Math.floor((s < -1 ? -1 : s > 1 ? 1 : s) * 0x7FFFFF + 0.5)
+		let v = Math.floor(s * 0x800000 + 0.5)
+		v = v > 0x7FFFFF ? 0x7FFFFF : v < -0x800000 ? -0x800000 : v
 		buf[o] = v & 0xFF
 		buf[o + 1] = (v >> 8) & 0xFF
 		buf[o + 2] = (v >> 16) & 0xFF

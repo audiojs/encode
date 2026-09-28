@@ -56,7 +56,11 @@ function validateTrack(t) {
 function build(track, opts, forceCo64) {
 	let { samples } = track
 	let n = samples.length
+	// the movie timescale is the track's own, so the edit list trims priming and padding to the sample (ISO/IEC
+	// 14496-12 §8.6.6; Apple's afconvert does the same): milliseconds put 100003 samples at 100019. Past 32 bits
+	// (27 h at 44.1 kHz) milliseconds it is.
 	let plan = planAudioTrack(track)
+	if (plan.movieDuration > 0xFFFFFFFF) plan = planAudioTrack(track, 1000)
 	let brand = opts.brand || 'M4A '
 	let creation = macTime(opts.creationTime || new Date())
 	let totalBytes = totalSampleBytes(samples)
@@ -66,8 +70,8 @@ function build(track, opts, forceCo64) {
 
 	let trak
 	w.box('moov', w => {
-		buildMvhd(w, creation, plan.movieDuration)
-		trak = buildAudioTrak(w, plan, track, opts, { trackId: 1, movieTimescale: 1000, creation, forceCo64 })
+		buildMvhd(w, creation, plan.movieDuration, 2, plan.movieTimescale)
+		trak = buildAudioTrak(w, plan, track, opts, { trackId: 1, movieTimescale: plan.movieTimescale, creation, forceCo64 })
 
 		if (opts.meta || opts.chapters?.length) {
 			let extra = {}
@@ -103,14 +107,15 @@ function build(track, opts, forceCo64) {
 /**
  * Plan an audio track's sample tables without writing any bytes: durations, chunking,
  * per-chunk byte lengths/relative offsets/start times, and the movie-timescale duration a
- * caller wants (mux() uses timescale 1000; remux() reuses the source file's mvhd timescale).
+ * caller wants (by default the track's own timescale, as mux() uses; remux() reuses the source file's mvhd timescale).
  * Exported so remux.js can plan the replacement audio track the same way mux() does.
  */
-export function planAudioTrack(track, movieTimescale = 1000) {
+export function planAudioTrack(track, movieTimescale) {
 	let { samples, codec } = track
 	let n = samples.length
 	let dur = resolveDurations(track)
 	let timescale = track.timescale ?? (codec === 'opus' ? 48000 : track.sampleRate)
+	movieTimescale ??= timescale
 
 	let trackDurationTicks = 0
 	if (dur.isConst) trackDurationTicks = dur.val * n
@@ -383,10 +388,10 @@ export function buildFtyp(w, brand) {
 	})
 }
 
-function buildMvhd(w, creation, duration, nextTrackId = 2) {
+function buildMvhd(w, creation, duration, nextTrackId = 2, timescale = 1000) {
 	w.fullBox('mvhd', 0, 0, w => {
 		w.u32(creation).u32(creation)
-		w.u32(1000).u32(duration)
+		w.u32(timescale).u32(duration)
 		w.fixed1616(1).fixed88(1)
 		w.u16(0).u32(0).u32(0)
 		unityMatrix(w)

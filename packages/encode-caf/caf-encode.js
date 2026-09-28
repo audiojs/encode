@@ -39,8 +39,10 @@ export default async function caf(opts) {
 			for (let i = 0; i < len; i++) {
 				for (let c = 0; c < cn; c++) {
 					let s = channels[c][i]
-					s = s < -1 ? -1 : s > 1 ? 1 : s
-					dv.setInt16(pos, Math.floor(s * 0x7FFF + 0.5), false)  // floor(x + 0.5): Math.round for every float32 sample, several times faster in V8
+					// round(x · 2^15), clipped (the family's decoders divide by 2^15: a round trip returns every code);
+					// floor(x + 0.5): Math.round for every float32 sample, several times faster in V8
+					let v = Math.floor(s * 0x8000 + 0.5)
+					dv.setInt16(pos, v > 0x7FFF ? 0x7FFF : v < -0x8000 ? -0x8000 : v, false)
 					pos += 2
 				}
 			}

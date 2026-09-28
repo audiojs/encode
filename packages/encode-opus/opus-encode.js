@@ -29,6 +29,7 @@ export default async function opus(opts) {
 	let total = 0        // input samples received (48 kHz)
 	let pcm = new Float32Array(0) // pending interleaved 48 kHz samples
 	let headerSent = false
+	let queue = [], queueBytes = 0 // packets of the page being filled
 
 	// header pages (BOS + tags). Metadata is baked into OpusTags — no buffering.
 	let headerPages = [
@@ -48,7 +49,7 @@ export default async function opus(opts) {
 		let pages = headers()
 		let frameLen = FRAME * nch, pos = 0
 		while (pcm.length - pos >= frameLen) {
-			pages.push(page(pcm.subarray(pos, pos + frameLen), 0x00))
+			packet(pcm.subarray(pos, pos + frameLen), pages)
 			pos += frameLen
 		}
 		pcm = pcm.subarray(pos).slice()
@@ -64,10 +65,11 @@ export default async function opus(opts) {
 		let padded = new Float32Array(frames * FRAME * nch)
 		padded.set(pcm)
 		pcm = new Float32Array(0)
-		for (let i = 0; i < frames; i++) {
-			let last = i === frames - 1
-			pages.push(page(padded.subarray(i * FRAME * nch, (i + 1) * FRAME * nch), last ? 0x04 : 0x00, last ? total + preSkip : 0))
-		}
+		// the last packets stay on the EOS page: closing a full page here left an empty EOS page with a granule below
+		// the page before it, and the end trim was lost
+		for (let i = 0; i < frames; i++) packet(padded.subarray(i * FRAME * nch, (i + 1) * FRAME * nch), pages, true)
+		pages.push(oggPage(queue, serial, pageSeq++, total + preSkip, 0x04))
+		queue = []
 		free()
 		return concat(pages)
 	}
@@ -86,13 +88,21 @@ export default async function opus(opts) {
 		return headerPages
 	}
 
-	// encode one 20 ms frame → one Ogg page
-	function page(frame, flags, endGranule) {
-		let packet = enc.encode(frame)
+	// Encode one 20 ms frame into the open page. A page closes past 4 KB or a second of audio, as libogg and
+	// opusenc page it: one packet per page spent 27 bytes of header on each (16 % more at 64 kbps, a third at 32).
+	function packet(frame, pages, last) {
+		let p = enc.encode(frame)
 		granule += FRAME
-		return oggPage(packet, serial, pageSeq++, endGranule || granule, flags)
+		queue.push(p)
+		queueBytes += p.length
+		if (!last && (queueBytes >= PAGE_BYTES || queue.length >= PAGE_PACKETS)) {
+			pages.push(oggPage(queue, serial, pageSeq++, granule, 0x00))
+			queue = []; queueBytes = 0
+		}
 	}
 }
+
+const PAGE_BYTES = 4096, PAGE_PACKETS = 50 // 50 × 20 ms: a page holds at most a second
 
 function concat(parts) {
 	if (parts.length === 1) return parts[0]
@@ -106,14 +116,19 @@ function concat(parts) {
 
 // --- Ogg muxer ---
 
-function oggPage(payload, serial, seq, granule, flags) {
-	let segs = []
-	let rem = payload.length
-	while (rem >= 255) { segs.push(255); rem -= 255 }
-	segs.push(rem)
+// one page of whole packets (a packet or a list of them); the granule is the end of its last packet's audio
+function oggPage(packets, serial, seq, granule, flags) {
+	if (!Array.isArray(packets)) packets = [packets]
+	let segs = [], size = 0
+	for (let p of packets) {
+		let rem = p.length
+		while (rem >= 255) { segs.push(255); rem -= 255 }
+		segs.push(rem)
+		size += p.length
+	}
 
 	let hdrLen = 27 + segs.length
-	let page = new Uint8Array(hdrLen + payload.length)
+	let page = new Uint8Array(hdrLen + size)
 	let dv = new DataView(page.buffer)
 
 	page[0] = 0x4F; page[1] = 0x67; page[2] = 0x67; page[3] = 0x53 // "OggS"
@@ -130,7 +145,8 @@ function oggPage(payload, serial, seq, granule, flags) {
 
 	page[26] = segs.length
 	for (let i = 0; i < segs.length; i++) page[27 + i] = segs[i]
-	page.set(payload, hdrLen)
+	let o = hdrLen
+	for (let p of packets) { page.set(p, o); o += p.length }
 
 	dv.setUint32(22, oggCrc(page), true)
 	return page

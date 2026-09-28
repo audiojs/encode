@@ -75,9 +75,10 @@ export default async function wavpack(opts = {}) {
 		} else {
 			let i32 = m.HEAP32, k = dst >> 2
 			for (let i = 0; i < n; i++) for (let c = 0; c < channels; c++) {
-				let v = chData[c][i]
-				let s = v < 0 ? v * div : v * max
-				i32[k++] = s < -div ? -div : s > max ? max : Math.floor(s + 0.5)  // floor(x + 0.5): Math.round for every float32 sample, several times faster in V8
+				// round(x · 2^(bits-1)), clipped: the family's decoders divide by 2^(bits-1), a round trip returns every code;
+				// floor(x + 0.5): Math.round for every float32 sample, several times faster in V8
+				let s = Math.floor(chData[c][i] * div + 0.5)
+				i32[k++] = s < -div ? -div : s > max ? max : s
 			}
 		}
 		if (!m._we_pack(h, n)) throw Error(readError(m, h))

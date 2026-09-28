@@ -34,17 +34,19 @@ t('stereo 32-bit float', async () => {
 })
 
 t('sample coding: interleaved little-endian, clamped, round half up, NaN → 0', async () => {
-	let x = [1, -1, 1.5, -1.5, 0.5 / 32767, -0.5 / 32767, 1.5 / 32767, NaN, 0.25]
+	// round(x · 2^(bits-1)), clipped to the codes: ffmpeg's and libsndfile's scale, the one the family's decoders
+	// divide by, so decode → encode returns every code
+	let x = [1, -1, 1.5, -1.5, 0.5 / 32768, -0.5 / 32768, 1.5 / 32768, NaN, 0.25]
 	let L = Float32Array.from(x), R = Float64Array.from(x, v => -v)
 	let pcm = async (bitDepth, ch) => { let enc = await wav({ sampleRate: 8000, bitDepth }); enc.encode(ch); return enc.flush().subarray(44) }
 	let b = await pcm(16, [L, R]), dv = new DataView(b.buffer, b.byteOffset)
-	let i16 = s => Math.round((s < -1 ? -1 : s > 1 ? 1 : s) * 0x7FFF) | 0
+	let i16 = s => s !== s ? 0 : Math.max(-32768, Math.min(32767, Math.floor(s * 32768 + 0.5)))
 	ok(x.every((v, i) => dv.getInt16(i * 4, true) === i16(L[i]) && dv.getInt16(i * 4 + 2, true) === i16(R[i])), '16-bit: L R L R …')
-	// R is float64: ±0.5/32767 scale to exact ±0.5 ties
-	is([dv.getInt16(0, true), dv.getInt16(3 * 4, true), dv.getInt16(5 * 4 + 2, true), dv.getInt16(4 * 4 + 2, true), dv.getInt16(7 * 4, true)], [32767, -32767, 1, 0, 0], '16-bit: full scale, clamped, tie +0.5 → 1, tie −0.5 → 0, NaN → 0')
+	// ±0.5/32768 scale to exact ±0.5 ties
+	is([dv.getInt16(0, true), dv.getInt16(1 * 4, true), dv.getInt16(3 * 4, true), dv.getInt16(4 * 4, true), dv.getInt16(5 * 4, true), dv.getInt16(7 * 4, true)], [32767, -32768, -32768, 1, 0, 0], '16-bit: full scale, clipped, tie +0.5 → 1, tie −0.5 → 0, NaN → 0')
 	b = await pcm(24, [L])
 	let s24 = i => (b[i * 3] | b[i * 3 + 1] << 8 | b[i * 3 + 2] << 16) << 8 >> 8
-	is([s24(0), s24(1), s24(3), s24(7), s24(8)], [0x7FFFFF, -0x7FFFFF, -0x7FFFFF, 0, Math.round(0.25 * 0x7FFFFF)], '24-bit: little-endian bytes, clamped')
+	is([s24(0), s24(1), s24(3), s24(7), s24(8)], [0x7FFFFF, -0x800000, -0x800000, 0, 0.25 * 0x800000], '24-bit: little-endian bytes, clipped')
 	b = await pcm(32, [L, R]), dv = new DataView(b.buffer, b.byteOffset)
 	ok(x.every((v, i) => Object.is(dv.getFloat32(i * 8, true), L[i]) && Object.is(dv.getFloat32(i * 8 + 4, true), Math.fround(R[i]))), '32-bit float: samples as float32, unclamped')
 })

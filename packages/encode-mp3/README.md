@@ -11,8 +11,12 @@ import mp3 from '@audio/encode-mp3';
 const encoder = await mp3({ sampleRate: 44100, channels: 1, bitrate: 128 });
 const chunk = encoder.encode(channelData); // → Uint8Array (MP3 frames)
 const tail = encoder.flush();              // → Uint8Array (remaining)
-// concatenate chunk + tail for complete MP3 file
+// concatenate chunk + tail, then write encoder.head() over the start
 ```
+
+### Gapless
+
+The output opens with an Info (CBR) or Xing (VBR) frame carrying LAME's tag: the frame and byte counts, a seek TOC, and the encoder delay (576 samples) and padding that decoders trim (ffmpeg, mpg123, Apple's AudioToolbox, LAME's own), so a decoded file has the source's exact length and timing. The totals are known at the end: `head()` after `flush()` returns the finished frame (after the ID3 tag when one leads) to write over the start; the whole-file `encode.mp3(...)` of `@audio/encode` does it for you. Unpatched (a pipe), the placeholder still carries the delay, and with `frames` (the exact length upfront) the frame count and padding too.
 
 ### Options
 
@@ -30,7 +34,7 @@ const encoder = await mp3({ sampleRate: 44100, channels: 1, bitrate: 192 });
 const a = encoder.encode(chunk1); // → Uint8Array
 const b = encoder.encode(chunk2); // → Uint8Array
 const c = encoder.flush();        // → Uint8Array
-// complete MP3 = concat(a, b, c)
+// complete MP3 = concat(a, b, c), encoder.head() written over its start
 encoder.free();
 ```
 
