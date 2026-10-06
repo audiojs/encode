@@ -1,6 +1,5 @@
-// requires: libflacjs
 /**
- * FLAC encoder — browser + Node, uses libflacjs (libFLAC compiled to JS/WASM)
+ * FLAC encoder — browser + Node, libFLAC compiled to WASM (src/libflac.wasm.js, from libflac.js by build.js)
  *
  * @param {Object} opts
  * @param {number} opts.sampleRate - required
@@ -25,9 +24,7 @@ export default async function flac(opts) {
 	let writeMeta = stream && meta ? (await import('./meta.js')).writeMeta : null
 	let prefix = new Uint8Array(0), first = null, info = null, total = 0, exact = null
 
-	// load libflac — works as CJS in ESM context
-	let mod = await import('libflacjs/dist/libflac.js')
-	Flac = mod.default || mod
+	Flac = (await import('./src/libflac.wasm.js')).default
 
 	// wait for ready if async variant
 	if (!Flac.isReady()) await new Promise(r => Flac.on('ready', r))

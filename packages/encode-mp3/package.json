@@ -1,6 +1,6 @@
 {
   "name": "@audio/encode-mp3",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Encode PCM audio samples to MP3 format via WASM",
   "type": "module",
   "main": "mp3-encode.js",
@@ -50,10 +50,10 @@
     "build": "bash build.sh",
     "prepack": "npm run build"
   },
-  "dependencies": {
-    "wasm-media-encoders": "^0.7.0"
-  },
   "audio": "./audio.js",
   "sideEffects": false,
-  "funding": "https://github.com/sponsors/audiojs"
+  "funding": "https://github.com/sponsors/audiojs",
+  "devDependencies": {
+    "wasm-media-encoders": "^0.7.0"
+  }
 }
