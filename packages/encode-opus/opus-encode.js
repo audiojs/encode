@@ -14,7 +14,7 @@
  * flush() -> Uint8Array (remaining pages + EOS)
  * free() -> void
  */
-import { createOpusEncoder, toOpusRate, FRAME } from './core.js'
+import { createOpusEncoder, createResampler, FRAME } from './core.js'
 
 export default async function opus(opts) {
 	let rate = opts.sampleRate
@@ -22,6 +22,7 @@ export default async function opus(opts) {
 	let nch = opts.channels || 1
 	let enc = await createOpusEncoder({ channels: nch, bitrate: opts.bitrate, application: opts.application, complexity: opts.complexity })
 	let preSkip = enc.lookahead
+	let rs = createResampler(rate, nch) // one stream across chunks: chunked input encodes as one chunk does
 
 	let serial = (Math.random() * 0xFFFFFFFF) >>> 0
 	let pageSeq = 0
@@ -41,24 +42,28 @@ export default async function opus(opts) {
 
 	function encodeChunk(channels) {
 		if (!enc) throw Error('Encoder already freed')
-		let next = toOpusRate(channels, rate)
+		let pages = headers()
+		feed(rs.write(channels), pages)
+		return concat(pages)
+	}
+
+	// queue 48 kHz samples, encode every whole frame
+	function feed(next, pages) {
 		total += next.length / nch
 		if (pcm.length) { let joined = new Float32Array(pcm.length + next.length); joined.set(pcm); joined.set(next, pcm.length); next = joined }
 		pcm = next
-
-		let pages = headers()
 		let frameLen = FRAME * nch, pos = 0
 		while (pcm.length - pos >= frameLen) {
 			packet(pcm.subarray(pos, pos + frameLen), pages)
 			pos += frameLen
 		}
 		pcm = pcm.subarray(pos).slice()
-		return concat(pages)
 	}
 
 	function flush() {
 		if (!enc) throw Error('Encoder already freed')
 		let pages = headers()
+		feed(rs.flush(), pages) // the resampler's tail
 		// Pad so the encoder delay (pre-skip) is pushed out, then trim via the final granule (RFC 7845 §4.4).
 		let need = total + preSkip - granule
 		let frames = Math.max(1, Math.ceil(need / FRAME))
@@ -78,7 +83,7 @@ export default async function opus(opts) {
 		if (!enc) return
 		enc.free()
 		enc = null
-		pcm = null
+		rs = pcm = null
 		headerPages = null
 	}
 

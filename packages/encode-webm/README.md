@@ -23,7 +23,7 @@ const tail = encoder.flush();              // → Uint8Array (final cluster)
 | `bitrate` | `64` | Target bitrate in kbps |
 | `application` | `'audio'` | `'audio'`, `'voip'`, or `'lowdelay'` |
 
-Opus always encodes at 48kHz. If the input sample rate differs, Lanczos-3 resampling is applied automatically.
+Opus always encodes at 48kHz. Other rates are resampled to it as one stream by [@audio/encode-opus](../encode-opus)'s resampler: any chunking encodes the audio one chunk does, sample for sample.
 
 Output uses unknown-size Segment and Clusters (streaming/live WebM), matching `MediaRecorder` output.
 

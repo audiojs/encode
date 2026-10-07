@@ -1,5 +1,6 @@
 import t, { is, ok } from 'tst'
 import webm from './webm-encode.js'
+import decode from '@audio/decode'
 
 function sine(rate, freq, dur) {
 	let n = rate * dur, d = new Float32Array(n)
@@ -141,6 +142,38 @@ t('last block carries DiscardPadding in a BlockGroup', async () => {
 	let group = findBytes(buf, new Uint8Array([0xA0]))
 	ok(group > 0, 'BlockGroup present')
 	ok(findBytes(buf.subarray(group), new Uint8Array([0x75, 0xA2])) > 0, 'DiscardPadding element present')
+})
+
+// A chord's harmonics over a dense multisine to 18 kHz: band-limited, so at 48 kHz it is the same sum sampled there
+function multisine(n, rate, to, seed = 7) {
+	let rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647, x = new Float64Array(Math.round(n * to / rate)), tones = []
+	for (let f0 of [110, 220, 329.63]) for (let h = 1; f0 * h < 18000; h++) tones.push([f0 * h, 0.15 / h, rnd() * 2 * Math.PI])
+	for (let k = 0; k < 100; k++) tones.push([20 + rnd() * 17980, 0.005, rnd() * 2 * Math.PI])
+	for (let [f, a, p] of tones) for (let i = 0, w = 2 * Math.PI * f / to; i < x.length; i++) x[i] += a * Math.sin(w * i + p)
+	return Float32Array.from(x)
+}
+
+// The 48 kHz stream is resampled as one, by @audio/encode-opus's resampler. Each chunk was resampled alone, its length
+// rounded: 1 s in chunks of 1000 came out 19 samples short, drifting early
+t('from 44.1 kHz in any chunks: the audio one chunk gives, sample for sample, on time', async () => {
+	let x = multisine(44100, 44100, 44100), ref = multisine(44100, 44100, 48000)
+	for (let chs of [[x], [x, x.map(v => -0.5 * v)]]) {
+		let run = async chunk => {
+			let enc = await webm({ sampleRate: 44100, channels: chs.length, bitrate: 128 }), parts = []
+			for (let i = 0; i < x.length; i += chunk) parts.push(enc.encode(chs.map(c => c.subarray(i, i + chunk))))
+			parts.push(enc.flush())
+			return (await decode(concatAll(parts))).channelData
+		}
+		let one = await run(x.length), e = 0, s = 0
+		is(one[0].length, 48000, `×${chs.length}: round(n · 48000 / 44100)`)
+		for (let i = 2000; i < 46000; i++) { e += (one[0][i] - ref[i]) ** 2; s += ref[i] ** 2 }
+		ok(10 * Math.log10(s / e) > 20, `×${chs.length}: SNR ${(10 * Math.log10(s / e)).toFixed(1)} dB against the source at 48 kHz`)
+		for (let chunk of [4096, 1000, 1]) {
+			let out = await run(chunk), diff = 0
+			for (let c = 0; c < chs.length; c++) for (let i = 0; i < one[c].length; i++) if (out[c][i] !== one[c][i]) diff++
+			is([out[0].length, diff], [48000, 0], `×${chs.length} in chunks of ${chunk}`)
+		}
+	}
 })
 
 function concatAll(parts) {

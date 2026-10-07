@@ -1,7 +1,9 @@
 import t, { is, ok } from 'tst'
 import opus from './opus-encode.js'
+import { createResampler, toOpusRate } from './core.js'
 import decode from '@audio/decode'
 import { execFileSync } from 'node:child_process'
+import { readFileSync } from 'node:fs'
 
 function sine(rate, freq, dur) {
 	let n = Math.round(rate * dur), d = new Float32Array(n)
@@ -80,6 +82,111 @@ t('streaming chunks equal one-shot', async () => {
 	enc.free() // idempotent after flush
 })
 
+// Music-like and band-limited: a chord's harmonics over a dense multisine standing in for noise, to 18 kHz. Sampled
+// at 48 kHz it is the source resampled exactly (Shannon), the reference with no resampler of its own.
+function multisine(rate, n, fmax = 18000, seed = 12345) {
+	let rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647, tones = []
+	for (let f0 of [110, 164.81, 220, 277.18, 329.63]) for (let h = 1; f0 * h < fmax; h++) tones.push([f0 * h, 0.1 / h, rnd() * 2 * Math.PI])
+	for (let k = 0; k < 200; k++) tones.push([20 + rnd() * (fmax - 20), 0.004, rnd() * 2 * Math.PI])
+	return to => {
+		let x = new Float64Array(Math.round(n * to / rate))
+		for (let [f, a, p] of tones) { // a·sin(ω·i + p) by a turning phasor
+			let w = 2 * Math.PI * f / to, cw = Math.cos(w), sw = Math.sin(w), c = Math.cos(p), sn = Math.sin(p)
+			for (let i = 0; i < x.length; i++) { x[i] += a * sn; let t = c * cw - sn * sw; sn = sn * cw + c * sw; c = t }
+		}
+		return Float32Array.from(x)
+	}
+}
+// Lena, 44.1 kHz, at 48 kHz by a long windowed sinc (±128 taps, Kaiser β 12: J. O. Smith, Digital Audio Resampling,
+// ccrma.stanford.edu/~jos/resample), the reference for real audio: 141 dB SNR on the multisine to 21 kHz
+function lenaAt48(x) {
+	const W = 128, i0 = v => { let s = 1, t = 1, k = 0; while (t > 1e-14 * s) { k++; t *= (v / (2 * k)) ** 2; s += t } return s }, ib = i0(12)
+	let tab = Array.from({ length: 160 }, (_, p) => Float64Array.from({ length: 2 * W }, (_, j) => {
+		let d = p / 160 + W - 1 - j, r = d / W
+		return Math.abs(r) >= 1 ? 0 : i0(12 * Math.sqrt(1 - r * r)) / ib * (d === 0 ? 1 : Math.sin(Math.PI * d) / (Math.PI * d))
+	}))
+	let y = new Float32Array(Math.round(x.length * 160 / 147))
+	for (let m = 0; m < y.length; m++) {
+		let b = Math.floor(m * 147 / 160) - W + 1, h = tab[m * 147 % 160], s = 0
+		for (let j = 0; j < 2 * W; j++) s += (x[b + j] ?? 0) * h[j]
+		y[m] = s
+	}
+	return y
+}
+async function roundTrip(chs, sampleRate, chunk = Infinity, bitrate = 128) {
+	let enc = await opus({ sampleRate, channels: chs.length, bitrate }), parts = []
+	for (let i = 0; i < chs[0].length; i += chunk) parts.push(enc.encode(chs.map(c => c.subarray(i, i + chunk))))
+	parts.push(enc.flush())
+	return (await decode(concat(parts))).channelData
+}
+// SNR over the middle (dB) and the lag behind the reference: the slope of the cross-spectrum's phase, 100 Hz to 4 kHz
+// (samples at 48 kHz, + late, between samples)
+function fit(ref, y) {
+	let a = 2000, n = ref.length - 2 * a, e = 0, s = 0, num = 0, den = 0
+	let hann = Float64Array.from({ length: n }, (_, i) => 0.5 - 0.5 * Math.cos(2 * Math.PI * i / n))
+	for (let i = a; i < a + n; i++) { e += (y[i] - ref[i]) ** 2; s += ref[i] ** 2 }
+	for (let f = 100; f <= 4000; f += 50) {
+		let w = 2 * Math.PI * f / 48000, cw = Math.cos(w), sw = Math.sin(w), c = 1, sn = 0, rr = 0, ri = 0, yr = 0, yi = 0
+		for (let i = 0; i < n; i++) {
+			let hc = hann[i] * c, hs = hann[i] * sn, t = c * cw - sn * sw
+			rr += ref[a + i] * hc; ri -= ref[a + i] * hs; yr += y[a + i] * hc; yi -= y[a + i] * hs
+			sn = sn * cw + c * sw; c = t
+		}
+		let re = yr * rr + yi * ri, im = yi * rr - yr * ri, mag = Math.hypot(re, im)
+		num -= mag * w * Math.atan2(im, re); den += mag * w * w
+	}
+	return { snr: 10 * Math.log10(s / e), lag: num / den }
+}
+
+// The 48 kHz stream is resampled as one, its phase and filter history carried from chunk to chunk. Each chunk was
+// resampled alone, its length rounded (4096 samples made 4458.23, so 4458) and its taps clamped at its edges: a second
+// in chunks of 4096 came out 2 samples short, in chunks of 1000 19 short, in chunks of 1 not resampled at all (44100
+// samples); two seconds in chunks of 4096 drifted 2.4 samples early on average, SNR 7.8 dB for the codec's 24.3; lena
+// in chunks of 131072, as audio's save() feeds it, 0.40 samples early after the first, SNR 27.7 dB for 33.3.
+t('from 44.1 kHz in any chunks: the samples one chunk gives, its length, sample for sample', async () => {
+	let n = 44100, sig = multisine(44100, n), x = sig(44100), y = sig(44100).map((v, i) => 0.7 * v + 0.3 * Math.sin(i / 7))
+	for (let chs of [[x], [x, y]]) {
+		let one = await roundTrip(chs, 44100)
+		is(one[0].length, 48000, `×${chs.length}: round(n · 48000 / 44100)`)
+		for (let chunk of [4096, 1000, 1023, 441, 1]) {
+			let out = await roundTrip(chs, 44100, chunk), diff = 0
+			for (let c = 0; c < chs.length; c++) for (let i = 0; i < one[c].length; i++) if (out[c][i] !== one[c][i]) diff++
+			is([out[0].length, diff], [one[0].length, 0], `×${chs.length} in chunks of ${chunk}`)
+		}
+	}
+})
+
+t('from 44.1 kHz: on time, at the SNR the codec gives 48 kHz', async () => {
+	let sig = multisine(44100, 88200), raw = new Float32Array(readFileSync(new URL('lena.raw', import.meta.resolve('audio-lena'))).buffer)
+	let l44 = raw.slice(0, 4 * 44100)
+	for (let [name, x44, x48] of [['multisine', sig(44100), sig(48000)], ['lena', l44, lenaAt48(l44)]]) {
+		let own = fit(x48, (await roundTrip([x48], 48000))[0])
+		for (let chunk of [Infinity, 131072, 4096, 1000]) {
+			let got = fit(x48, (await roundTrip([x44], 44100, chunk))[0])
+			ok(Math.abs(got.lag - own.lag) < 0.02 && got.snr > own.snr - 0.3, `${name} in chunks of ${chunk}: ${got.lag.toFixed(3)} samples (codec ${own.lag.toFixed(3)}), SNR ${got.snr.toFixed(1)} dB (codec ${own.snr.toFixed(1)})`)
+		}
+	}
+})
+
+// The resampler alone against the exact reference, tones to 0.8 of the lower Nyquist (polyphase's flat band)
+t('createResampler: any rate to 48 kHz on time, chunked as one', () => {
+	for (let rate of [44100, 22050, 32000, 8000, 96000, 48000]) {
+		let sig = multisine(rate, rate, 0.4 * Math.min(rate, 48000)), x = sig(rate), ref = sig(48000)
+		let r = createResampler(rate), parts = []
+		for (let i = 0; i < x.length; i += 1000) parts.push(r.write([x.subarray(i, i + 1000)]))
+		parts.push(r.flush())
+		let y = concatF32(parts), one = toOpusRate([x], rate), e = 0, s = 0, diff = 0
+		for (let i = 2000; i < ref.length - 2000; i++) { e += (y[i] - ref[i]) ** 2; s += ref[i] ** 2 }
+		for (let i = 0; i < one.length; i++) if (y[i] !== one[i]) diff++
+		let db = 10 * Math.log10(s / e)
+		ok(y.length === ref.length && diff === 0 && db > 80, `${rate}: ${y.length} samples, ${diff} off the one-shot, SNR ${db.toFixed(1)} dB`)
+	}
+	let st = createResampler(44100, 2)
+	is(st.write([new Float32Array(441).fill(1), new Float32Array(441).fill(-1)]).length % 2, 0, 'stereo interleaved')
+	let err; try { st.write([new Float32Array(10)]) } catch (e) { err = e }
+	ok(err, 'fewer channels than made for throw')
+})
+
 t('meta tags in OpusTags', async () => {
 	let enc = await opus({ sampleRate: 48000, meta: { title: 'Hare Krishna', artist: 'Prabhupada' } })
 	let buf = enc.flush()
@@ -132,8 +239,9 @@ t('bad options throw', async () => {
 	ok(err, 'missing sampleRate')
 })
 
-function concat(parts) {
-	let len = parts.reduce((n, p) => n + p.length, 0), out = new Uint8Array(len), off = 0
+function concat(parts, T = Uint8Array) {
+	let len = parts.reduce((n, p) => n + p.length, 0), out = new T(len), off = 0
 	for (let p of parts) { out.set(p, off); off += p.length }
 	return out
 }
+const concatF32 = parts => concat(parts, Float32Array)

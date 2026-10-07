@@ -14,7 +14,7 @@
  * flush() -> Uint8Array (final cluster with remaining samples)
  * free() -> void
  */
-import { createOpusEncoder, toOpusRate, FRAME } from '@audio/encode-opus/core'
+import { createOpusEncoder, createResampler, FRAME } from '@audio/encode-opus/core'
 
 export default async function webm(opts) {
 	let rate = opts.sampleRate
@@ -25,6 +25,7 @@ export default async function webm(opts) {
 	let OPUS_RATE = 48000
 	let FRAME_SIZE = FRAME
 	let PRE_SKIP = enc.lookahead // encoder delay in 48 kHz samples
+	let rs = createResampler(rate, nch) // one stream across chunks: chunked input encodes as one chunk does
 
 	// buffered interleaved float PCM at 48kHz
 	let pcmBuf = new Float32Array(0)
@@ -36,14 +37,7 @@ export default async function webm(opts) {
 
 	function encodeChunk(channels) {
 		if (!enc) throw Error('Encoder already freed')
-		let resampled = toOpusRate(channels, rate)
-		inputTotal += resampled.length / nch
-
-		// append to PCM buffer
-		let prev = pcmBuf
-		pcmBuf = new Float32Array(prev.length + resampled.length)
-		pcmBuf.set(prev)
-		pcmBuf.set(resampled, prev.length)
+		append(rs.write(channels))
 
 		let parts = []
 
@@ -73,6 +67,8 @@ export default async function webm(opts) {
 	}
 
 	function flush() {
+		if (!enc) throw Error('Encoder already freed')
+		append(rs.flush()) // the resampler's tail
 		let parts = []
 
 		if (!headerSent) {
@@ -104,7 +100,16 @@ export default async function webm(opts) {
 
 	function free() {
 		if (enc) { enc.free(); enc = null }
-		pcmBuf = null
+		rs = pcmBuf = null
+	}
+
+	// queue 48 kHz samples
+	function append(pcm) {
+		inputTotal += pcm.length / nch
+		let prev = pcmBuf
+		pcmBuf = new Float32Array(prev.length + pcm.length)
+		pcmBuf.set(prev)
+		pcmBuf.set(pcm, prev.length)
 	}
 
 	// --- EBML helpers ---

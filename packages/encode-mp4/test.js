@@ -232,14 +232,16 @@ t('mp4-encode: pcm — encode() in several chunks vs one chunk produces identica
 	is(Buffer.from(a).equals(Buffer.from(b)), true, 'byte-identical output')
 })
 
-t('mp4-encode: flac/mp3/opus — encode() in chunks vs one call decode to the same audio (SNR)', async () => {
-	for (let codec of ['flac', 'mp3', 'opus']) {
-		let ch = [sine(44100, 440, 0.3, 0.3), sine(44100, 880, 0.3, 0.3)]
-		let whole = await mp4({ sampleRate: 44100, channels: 2, codec })
+// Opus resampled each chunk alone, its phase restarted and its length rounded: chunks came out apart from one call.
+// One creation time for both: the header holds it, to the second
+t('mp4-encode: flac/mp3/opus/aac: encode() in chunks vs one call, the same bytes', async () => {
+	for (let codec of ['flac', 'mp3', 'opus', 'aac']) {
+		let ch = [sine(44100, 440, 0.3, 0.3), sine(44100, 880, 0.3, 0.3)], creationTime = new Date()
+		let whole = await mp4({ sampleRate: 44100, channels: 2, codec, creationTime })
 		await whole.encode(ch)
 		let a = await whole.flush()
 
-		let chunked = await mp4({ sampleRate: 44100, channels: 2, codec })
+		let chunked = await mp4({ sampleRate: 44100, channels: 2, codec, creationTime })
 		let n = ch[0].length, third = Math.ceil(n / 3)
 		for (let off = 0; off < n; off += third) {
 			let end = Math.min(off + third, n)
@@ -247,10 +249,7 @@ t('mp4-encode: flac/mp3/opus — encode() in chunks vs one call decode to the sa
 		}
 		let b = await chunked.flush()
 
-		let da = deinterleave(ffmpegDecodeF32(a), 2)[0]
-		let db = deinterleave(ffmpegDecodeF32(b), 2)[0]
-		let n2 = Math.min(da.length, db.length)
-		ok(snr(da.subarray(0, n2), db.subarray(0, n2)) > 20, codec + ': chunked vs whole SNR > 20dB')
+		ok(Buffer.from(a).equals(Buffer.from(b)), codec + ': byte-identical output')
 	}
 })
 
@@ -336,6 +335,34 @@ t('mp4-encode: mp3 – the Info frame stays out, its LAME delay and padding make
 		is(lag(x, out), 0, id + ': decode-mp4 onset')
 		is(+ffprobe(writeTmp(file, '.m4a'), ['-show_streams']).streams[0].duration_ts, n, id + ': ffprobe duration')
 		is(lag(x, deinterleave(ffmpegDecodeF32(file), channels)[0]), 0, id + ': ffmpeg onset')
+	}
+})
+
+// Opus in MP4 resamples to 48 kHz as one stream (@audio/encode-opus's resampler) and pushes the encoder delay out at the
+// end, as Ogg and WebM do. Each chunk resampled alone came out rounded: 1 s at 44.1 kHz in chunks of 1000, 19 samples
+// short and drifting early. An end padded only to a whole frame never encoded the input's last samples, up to the
+// pre-skip (312): 48000 at 48 kHz decoded as 47688, its edit list 47688. Lengths by the edit list (ffmpeg and
+// decode-mp4 honour its start, not its end); the tail checked against the source sampled at 48 kHz.
+t('mp4-encode: opus – any chunks give one chunk\'s audio, sample for sample, to the input\'s last', async () => {
+	let tones = [[220, 0.3, 0.1], [330, 0.2, 1.3], [1250, 0.1, 2.2], [4400, 0.05, 0.7], [11000, 0.03, 2.9]]
+	let at = (rate, n) => Float32Array.from({ length: n }, (_, i) => tones.reduce((s, [f, a, p]) => s + a * Math.sin(2 * Math.PI * f * i / rate + p), 0))
+	for (let [rate, n] of [[44100, 44100], [48000, 48000], [48000, 48900]]) {
+		let x = at(rate, n), want = Math.round(n * 48000 / rate), ref = at(48000, want), one
+		for (let chunk of [n, 4096, 1000]) {
+			let enc = await mp4({ sampleRate: rate, channels: 1, codec: 'opus', bitrate: 128 }), id = `${n} at ${rate} Hz in chunks of ${chunk}`
+			for (let i = 0; i < n; i += chunk) await enc.encode([x.subarray(i, i + chunk)])
+			let file = await enc.flush(), e = readEditList(file), y = (await decodeMp4(file)).channelData[0]
+			is(readTracks(file)[0].samples.length * 960 - e.priming - e.padding, want, `${id}: the edit list presents the input`)
+			if (!one) {
+				one = y
+				let q = snr(ref.subarray(want - 960, want), y.subarray(want - 960, want))
+				ok(q > 20, `${id}: the last 20 ms at ${q.toFixed(1)} dB SNR`)
+			} else {
+				let diff = 0
+				for (let i = 0; i < want; i++) if (y[i] !== one[i]) diff++
+				is(diff, 0, `${id}: as one chunk, sample for sample`)
+			}
+		}
 	}
 })
 

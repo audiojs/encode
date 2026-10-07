@@ -145,36 +145,34 @@ export function ascFromAdts(buf, pos) {
 // ===== Opus =====
 
 async function opusCodec(opts) {
-	let { createOpusEncoder, toOpusRate, FRAME } = await import('@audio/encode-opus/core')
+	let { createOpusEncoder, createResampler, FRAME } = await import('@audio/encode-opus/core')
 	let nch = opts.channels || 1
 	let enc = await createOpusEncoder({ channels: nch, bitrate: opts.bitrate, application: opts.application, complexity: opts.quality })
-	let rate = opts.sampleRate, preSkip = enc.lookahead
+	let preSkip = enc.lookahead
+	let rs = createResampler(opts.sampleRate, nch) // one stream across chunks: chunked input encodes as one chunk does
 	let pcmBuf = new Float32Array(0)
 	let inputTotal = 0, encodedTotal = 0, padding = 0
 
-	function frames(buf, out) {
-		let frameSamples = FRAME * nch, n = Math.floor(buf.length / frameSamples)
+	// queue 48 kHz samples, encode every whole frame
+	function frames(pcm, out) {
+		inputTotal += pcm.length / nch
+		let buf = new Float32Array(pcmBuf.length + pcm.length), frameSamples = FRAME * nch, n = Math.floor(buf.length / frameSamples)
+		buf.set(pcmBuf); buf.set(pcm, pcmBuf.length)
 		for (let i = 0; i < n; i++) { out.push(enc.encode(buf.subarray(i * frameSamples, (i + 1) * frameSamples))); encodedTotal += FRAME }
-		return buf.subarray(n * frameSamples).slice()
+		pcmBuf = buf.subarray(n * frameSamples).slice()
+		return out
 	}
 	return {
-		push(channels) {
-			let resampled = toOpusRate(channels, rate), out = []
-			inputTotal += resampled.length / nch
-			let merged = new Float32Array(pcmBuf.length + resampled.length)
-			merged.set(pcmBuf); merged.set(resampled, pcmBuf.length)
-			pcmBuf = frames(merged, out)
-			return out
-		},
+		push: channels => frames(rs.write(channels), []),
 		end() {
-			let frameSamples = FRAME * nch, out = []
-			if (pcmBuf.length) {
-				let padded = new Float32Array(Math.ceil(pcmBuf.length / frameSamples) * frameSamples)
-				padded.set(pcmBuf)
-				frames(padded, out)
-			}
+			let out = frames(rs.flush(), [])
+			// pad so the encoder delay is pushed out: the input's last samples come out of the last packet
+			let padded = new Float32Array(Math.ceil((pcmBuf.length / nch + preSkip) / FRAME) * FRAME * nch)
+			padded.set(pcmBuf)
+			for (let i = 0; i < padded.length; i += FRAME * nch) { out.push(enc.encode(padded.subarray(i, i + FRAME * nch))); encodedTotal += FRAME }
+			pcmBuf = null
 			enc.free()
-			padding = Math.max(0, Math.round(encodedTotal - preSkip - inputTotal))
+			padding = encodedTotal - preSkip - inputTotal
 			return out
 		},
 		track: () => ({ codec: 'opus', sampleRate: 48000, channels: nch, config: { preSkip }, priming: preSkip, padding, bitrate: opts.bitrate }),

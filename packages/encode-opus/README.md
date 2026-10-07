@@ -25,7 +25,7 @@ const tail = encoder.flush();              // → Uint8Array (remaining + EOS)
 | `complexity` | `10` | libopus encoder effort, 0-10 |
 | `meta` | — | VorbisComment tags (`title`, `artist`, …) written into OpusTags |
 
-Opus always encodes at 48kHz. If the input sample rate differs, Lanczos-3 resampling is applied automatically.
+Opus always encodes at 48kHz. Other rates are resampled to it as one stream ([polyphase FIR](https://www.npmjs.com/package/@audio/resample-polyphase), its phase and history carried across chunks): any chunking encodes as one chunk does, sample for sample, on time.
 
 ### Streaming
 
@@ -49,11 +49,15 @@ encoder.free();
 Container muxers build on the packet encoder directly (`@audio/encode-webm` does):
 
 ```js
-import { createOpusEncoder, toOpusRate, FRAME } from '@audio/encode-opus/core'
+import { createOpusEncoder, createResampler, toOpusRate, FRAME } from '@audio/encode-opus/core'
 
 let enc = await createOpusEncoder({ channels: 2, bitrate: 96 })
 enc.lookahead                       // encoder delay in 48 kHz samples: Ogg pre-skip / Matroska CodecDelay
-let pcm = toOpusRate(channelData, 44100)   // interleaved 48 kHz float
+let pcm = toOpusRate(channelData, 44100)   // a whole signal → interleaved 48 kHz float
 let packet = enc.encode(pcm.subarray(0, FRAME * 2))
 enc.free()
+
+let rs = createResampler(44100, 2)  // a chunked one: one stream
+rs.write(chunk)                     // planar chunk → interleaved 48 kHz, what is ready
+rs.flush()                          // the rest: round(n · 48000 / 44100) in all
 ```

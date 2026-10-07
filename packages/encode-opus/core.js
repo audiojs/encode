@@ -6,8 +6,13 @@
  * enc.lookahead            // encoder delay in 48 kHz samples — the Ogg pre-skip / Matroska CodecDelay
  * enc.encode(frame)        // interleaved float PCM at 48 kHz, 960 samples per channel → Uint8Array packet
  * enc.free()
+ *
+ * let rs = createResampler(44100, 2)
+ * rs.write(channels)       // planar chunk at 44.1 kHz → interleaved 48 kHz, as much as is ready
+ * rs.flush()               // the rest
  */
 import createModule from './src/opus.wasm.js'
+import { stream } from '@audio/resample-polyphase'
 
 export const OPUS_RATE = 48000
 export const FRAME = 960 // 20 ms at 48 kHz
@@ -64,29 +69,37 @@ export async function createOpusEncoder(opts = {}) {
 function errName(code) { return code + ' ' + (ERRORS[-code] || 'UNKNOWN_ERROR') }
 function check(code) { if (code < 0) throw Error('libopus ' + errName(code)); return code }
 
-/** Resample planar float channels to interleaved 48 kHz (Lanczos-3; passthrough at 48 kHz). */
-export function toOpusRate(channels, rate) {
-	let nch = channels.length, len = channels[0].length
-	let ratio = OPUS_RATE / rate
-	let outLen = ratio === 1 ? len : Math.round(len * ratio)
-	let out = new Float32Array(outLen * nch)
-	for (let i = 0, o = 0; i < outLen; i++) {
-		let x = i / ratio
-		for (let c = 0; c < nch; c++) out[o++] = ratio === 1 ? channels[c][i] : lanczos(channels[c], x, len)
+/**
+ * Resample planar float chunks to interleaved 48 kHz as one stream (polyphase FIR, @audio/resample-polyphase): the
+ * filter's phase and history carry from chunk to chunk, so any chunking gives the samples one chunk gives, on time,
+ * and the writes with the flush give round(n · 48000 / rate) samples for n in. 48 kHz passes through.
+ * @param {number} rate input sample rate
+ * @param {number} [channels=1]
+ * @returns {{ write(chunk: ArrayLike<number>[]): Float32Array, flush(): Float32Array }}
+ */
+export function createResampler(rate, channels = 1) {
+	let rs = rate === OPUS_RATE ? null : Array.from({ length: channels }, () => stream({ from: rate, to: OPUS_RATE }))
+	return {
+		write(chunk) {
+			if (chunk.length < channels) throw Error('Expected ' + channels + ' channels, got ' + chunk.length)
+			return interleave(rs ? rs.map((r, c) => r.write(chunk[c])) : chunk.slice(0, channels))
+		},
+		flush: () => rs ? interleave(rs.map(r => r.flush())) : new Float32Array(0)
 	}
+}
+
+/** Resample a whole signal, planar float channels, to interleaved 48 kHz: a chunked source takes createResampler. */
+export function toOpusRate(channels, rate) {
+	let r = createResampler(rate, channels.length), a = r.write(channels), b = r.flush()
+	let out = new Float32Array(a.length + b.length)
+	out.set(a)
+	out.set(b, a.length)
 	return out
 }
 
-function lanczos(ch, x, len) {
-	let a = 3, sum = 0, wsum = 0
-	let i0 = Math.floor(x) - a + 1
-	let i1 = Math.floor(x) + a
-	for (let i = i0; i <= i1; i++) {
-		let d = x - i
-		let w = d === 0 ? 1 : a * Math.sin(Math.PI * d) * Math.sin(Math.PI * d / a) / (Math.PI * Math.PI * d * d)
-		let idx = i < 0 ? 0 : i >= len ? len - 1 : i
-		sum += ch[idx] * w
-		wsum += w
-	}
-	return wsum ? sum / wsum : 0
+function interleave(chs) {
+	let nch = chs.length, len = chs[0].length, out = new Float32Array(len * nch)
+	if (nch === 1) out.set(chs[0])
+	else for (let c = 0; c < nch; c++) for (let i = 0, ch = chs[c]; i < len; i++) out[i * nch + c] = ch[i]
+	return out
 }

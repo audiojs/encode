@@ -24,5 +24,15 @@ export interface OpusPacketEncoder {
 /** Initialize libopus WASM and create a raw packet encoder. */
 export function createOpusEncoder(opts?: OpusEncoderOptions): Promise<OpusPacketEncoder>;
 
-/** Resample planar float channels to interleaved 48 kHz (Lanczos-3; passthrough at 48 kHz). */
+export interface OpusResampler {
+  /** Planar chunk at the input rate → interleaved 48 kHz float, as much as is ready */
+  write(chunk: Float32Array[]): Float32Array;
+  /** The rest: all writes and the flush hold round(n · 48000 / sampleRate) samples per channel */
+  flush(): Float32Array;
+}
+
+/** Resample chunks to 48 kHz as one stream (polyphase FIR): any chunking gives the samples one chunk gives. */
+export function createResampler(sampleRate: number, channels?: number): OpusResampler;
+
+/** Resample a whole signal, planar float channels, to interleaved 48 kHz (passthrough at 48 kHz). */
 export function toOpusRate(channels: Float32Array[], sampleRate: number): Float32Array;

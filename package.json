@@ -1,6 +1,6 @@
 {
   "name": "@audio/encode",
-  "version": "1.9.0",
+  "version": "1.9.1",
   "description": "Encode audio data in node or browser",
   "type": "module",
   "sideEffects": false,
@@ -69,12 +69,12 @@
     "@audio/encode-flac": "^1.4.2",
     "@audio/encode-mp3": "^2.0.0",
     "@audio/encode-ogg": "^1.3.0",
-    "@audio/encode-opus": "^1.3.1",
+    "@audio/encode-opus": "^1.3.2",
     "@audio/encode-qoa": "^1.3.1",
     "@audio/encode-wav": "^1.5.2",
-    "@audio/encode-webm": "^1.3.0",
+    "@audio/encode-webm": "^1.3.1",
     "@audio/encode-wavpack": "^1.0.2",
-    "@audio/encode-mp4": "^1.2.0",
+    "@audio/encode-mp4": "^1.2.1",
     "@audio/encode-alac": "^1.0.1"
   },
   "devDependencies": {
