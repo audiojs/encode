@@ -1,0 +1,58 @@
+{
+  "name": "@audio/encode-gsm",
+  "version": "0.1.0",
+  "description": "Encode PCM audio to GSM 06.10 full rate (libgsm WASM)",
+  "type": "module",
+  "main": "gsm-encode.js",
+  "types": "gsm-encode.d.ts",
+  "exports": {
+    ".": "./gsm-encode.js",
+    "./audio": {
+      "types": "./audio.d.ts",
+      "default": "./audio.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "build": "bash build.sh",
+    "test": "node test.js"
+  },
+  "files": [
+    "gsm-encode.js",
+    "gsm-encode.d.ts",
+    "src/gsm.wasm.js",
+    "LICENSE",
+    "audio.js",
+    "audio.d.ts"
+  ],
+  "keywords": [
+    "gsm",
+    "gsm-06.10",
+    "gsm-full-rate",
+    "audio",
+    "encode",
+    "encoder",
+    "codec",
+    "wasm",
+    "libgsm",
+    "speech"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "license": "MIT",
+  "author": "audiojs",
+  "homepage": "https://github.com/audiojs/encode/tree/main/packages/encode-gsm",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/audiojs/encode.git",
+    "directory": "packages/encode-gsm"
+  },
+  "bugs": "https://github.com/audiojs/encode/issues",
+  "engines": {
+    "node": ">=18"
+  },
+  "audio": "./audio.js",
+  "sideEffects": false,
+  "funding": "https://github.com/sponsors/audiojs"
+}

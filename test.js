@@ -263,7 +263,7 @@ t('ogg meta — VorbisComment rewrite preserves audio', async () => {
 
 t('formats list + mime map', async () => {
 	ok(formats.includes('webm') && formats.includes('qoa') && formats.includes('caf') && formats.includes('aac'), 'new formats listed')
-	is(formats.length, 13, '13 formats')
+	is(formats.length, 14, '14 formats')
 	is(mime.webm, 'audio/webm')
 	is(encode.formats, formats, 'exposed on encode too')
 })
@@ -394,3 +394,16 @@ t('stream: with `frames` (the exact length, known upfront) the streamed header i
 	}
 })
 
+
+t('gsm: 8 kHz mono, the package\'s bytes, decoded back', async () => {
+	let x = Float32Array.from({ length: 8000 }, (_, i) => 0.5 * Math.sin(2 * Math.PI * 440 * i / 8000))
+	let buf = await encode.gsm([x], { sampleRate: 8000 })
+	is(buf.length, 50 * 33, '50 frames of 33 bytes')
+	let enc = await (await import('@audio/encode-gsm')).default({ sampleRate: 8000 }), a = enc.encode([x]), b = enc.flush()
+	enc.free()
+	is(buf, Uint8Array.from([...a, ...b]), 'the package\'s bytes')
+	let y = (await (await import('@audio/decode-gsm')).default(buf)).channelData[0]
+	almost(rms(y), rms(x), 0.05, 'decoded back at its level')
+	let threw = await encode.gsm([x], { sampleRate: 44100 }).then(() => false, e => /8000 Hz/.test(e.message))
+	ok(threw, '8 kHz only')
+})

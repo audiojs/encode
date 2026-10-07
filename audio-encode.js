@@ -110,6 +110,7 @@ reg('opus', () => import('@audio/encode-opus'))
 reg('webm', () => import('@audio/encode-webm'))
 reg('aac', () => import('@audio/encode-aac'))
 reg('qoa', () => import('@audio/encode-qoa'))
+reg('gsm', () => import('@audio/encode-gsm'))
 reg('wv', () => import('@audio/encode-wavpack'))
 // M4A / MP4 container: AAC (browser WebCodecs), Opus, FLAC, MP3, PCM via @audio/encode-mp4;
 // `codec: 'alac'` routes to the pure-JS Apple Lossless encoder, which muxes through the same package.
@@ -124,11 +125,11 @@ for (let name of ['m4a', 'mp4']) {
 }
 
 // Supported format names and their MIME types — for format-agnostic pipelines.
-export const formats = ['wav', 'aiff', 'caf', 'mp3', 'ogg', 'flac', 'opus', 'webm', 'aac', 'qoa', 'wv', 'm4a', 'mp4']
+export const formats = ['wav', 'aiff', 'caf', 'mp3', 'ogg', 'flac', 'opus', 'webm', 'aac', 'qoa', 'gsm', 'wv', 'm4a', 'mp4']
 export const mime = {
 	wav: 'audio/wav', aiff: 'audio/aiff', caf: 'audio/x-caf',
 	mp3: 'audio/mpeg', ogg: 'audio/ogg', flac: 'audio/flac',
-	opus: 'audio/ogg', webm: 'audio/webm', aac: 'audio/aac', qoa: 'audio/qoa',
+	opus: 'audio/ogg', webm: 'audio/webm', aac: 'audio/aac', qoa: 'audio/qoa', gsm: 'audio/x-gsm',
 	wv: 'audio/wavpack', m4a: 'audio/mp4', mp4: 'audio/mp4',
 }
 encode.formats = formats
