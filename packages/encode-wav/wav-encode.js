@@ -155,6 +155,7 @@ const LE = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1
 // sample, several times faster in V8.
 function q16(s) { let v = Math.floor(s * 0x8000 + 0.5); return v > 0x7FFF ? 0x7FFF : v < -0x8000 ? -0x8000 : v }
 function i16(ch, nch, len, buf) {
+	if (nch === 2 && ch[0] instanceof Float32Array && ch[1] instanceof Float32Array && i16Stereo(ch, len, buf)) return
 	if (!LE) {
 		let dv = new DataView(buf.buffer)
 		for (let c = 0; c < nch; c++) for (let x = ch[c], i = 0, o = c * 2; i < len; i++, o += nch * 2) {
@@ -168,6 +169,39 @@ function i16(ch, nch, len, buf) {
 		let s = x[i]
 		out[o] = q16(s)
 	}
+}
+
+// wav-encode.wat, compiled by wat2wasm (526 bytes): i16's loops for two float32 channels in WebAssembly SIMD, the same
+// float64 ops, the same bytes; twice as fast with the copies in and out
+const I16 = new Uint8Array([
+	0,97,115,109,1,0,0,0,1,8,1,96,4,127,127,127,127,0,3,2,1,0,5,3,1,0,1,7,16,2,6,109,101,109,111,114,121,2,0,3,105,49,
+	54,0,0,10,222,3,1,219,3,3,1,127,6,123,1,127,68,0,0,0,0,0,0,224,64,253,20,33,7,68,0,0,0,0,0,0,224,63,253,20,33,8,32,
+	1,32,0,107,33,1,32,0,32,3,65,124,113,65,2,116,106,33,4,2,64,32,0,32,4,79,13,0,3,64,32,0,253,0,4,0,33,5,32,0,32,1,
+	106,253,0,4,0,33,6,32,5,253,95,32,7,253,242,1,32,8,253,240,1,253,117,253,252,1,32,5,32,5,253,13,8,9,10,11,12,13,14,
+	15,0,1,2,3,4,5,6,7,253,95,32,7,253,242,1,32,8,253,240,1,253,117,253,252,1,253,13,0,1,2,3,4,5,6,7,16,17,18,19,20,21,
+	22,23,33,9,32,6,253,95,32,7,253,242,1,32,8,253,240,1,253,117,253,252,1,32,6,32,6,253,13,8,9,10,11,12,13,14,15,0,1,2,
+	3,4,5,6,7,253,95,32,7,253,242,1,32,8,253,240,1,253,117,253,252,1,253,13,0,1,2,3,4,5,6,7,16,17,18,19,20,21,22,23,33,
+	10,32,2,32,9,32,10,253,133,1,32,9,32,10,253,133,1,253,13,0,1,8,9,2,3,10,11,4,5,12,13,6,7,14,15,253,11,4,0,32,0,65,
+	16,106,33,0,32,2,65,16,106,33,2,32,0,32,4,73,13,0,11,11,32,4,32,3,65,3,113,65,2,116,106,33,4,2,64,32,0,32,4,79,13,0,
+	3,64,32,0,42,2,0,187,68,0,0,0,0,0,0,224,64,162,68,0,0,0,0,0,0,224,63,160,156,252,2,33,11,32,2,65,255,255,1,65,128,
+	128,126,32,11,32,11,65,128,128,126,72,27,32,11,65,255,255,1,74,27,59,1,0,32,0,32,1,106,42,2,0,187,68,0,0,0,0,0,0,
+	224,64,162,68,0,0,0,0,0,0,224,63,160,156,252,2,33,11,32,2,65,255,255,1,65,128,128,126,32,11,32,11,65,128,128,126,72,
+	27,32,11,65,255,255,1,74,27,59,1,2,32,0,65,4,106,33,0,32,2,65,4,106,33,2,32,0,32,4,73,13,0,11,11,11,
+])
+let simd // the kernel's exports where WebAssembly SIMD runs, null elsewhere
+
+/** Two float32 channels of len samples into buf by the kernel: false where it does not run (or a channel is short) */
+function i16Stereo(ch, len, buf) {
+	if (ch[0].length !== len || ch[1].length !== len) return false
+	if (simd === undefined) try { simd = new WebAssembly.Instance(new WebAssembly.Module(I16)).exports } catch { simd = null }
+	if (!simd) return false
+	let mem = simd.memory, need = len * 12
+	if (need > mem.buffer.byteLength) mem.grow(Math.ceil((need - mem.buffer.byteLength) / 65536))
+	let f32 = new Float32Array(mem.buffer, 0, len * 2)
+	f32.set(ch[0]); f32.set(ch[1], len)
+	simd.i16(0, len * 4, len * 8, len)
+	buf.set(new Uint8Array(mem.buffer, len * 8, len * 4))
+	return true
 }
 
 function i24(ch, nch, len, buf) {

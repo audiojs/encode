@@ -1,6 +1,6 @@
 {
   "name": "@audio/encode-wav",
-  "version": "1.5.2",
+  "version": "1.5.3",
   "description": "Encode PCM audio samples to WAV format",
   "type": "module",
   "main": "wav-encode.js",
@@ -16,6 +16,7 @@
   },
   "files": [
     "wav-encode.js",
+    "wav-encode.wat",
     "wav-encode.d.ts",
     "meta.js",
     "LICENSE",
