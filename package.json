@@ -1,6 +1,6 @@
 {
   "name": "@audio/encode",
-  "version": "1.11.0",
+  "version": "1.12.0",
   "description": "Encode audio data in node or browser",
   "type": "module",
   "sideEffects": false,
@@ -14,11 +14,11 @@
     },
     "./stream": "./stream.js",
     "./meta": "./meta.js",
-    "./package.json": "./package.json",
-    "./*": {
-      "types": "./members/*.d.ts",
-      "default": "./members/*.js"
-    }
+    "./audio": {
+      "types": "./audio.d.ts",
+      "default": "./audio.js"
+    },
+    "./package.json": "./package.json"
   },
   "files": [
     "audio-encode.js",
@@ -27,7 +27,8 @@
     "stream.d.ts",
     "meta.js",
     "LICENSE",
-    "members/"
+    "audio.js",
+    "audio.d.ts"
   ],
   "workspaces": [
     "packages/*"
@@ -36,9 +37,7 @@
     "test": "node test.js",
     "test:all": "npm test --workspaces && npm test",
     "publish:all": "for d in packages/* .; do id=$(node -p \"require('./$d/package.json').name+'@'+require('./$d/package.json').version\"); npm view \"$id\" version >/dev/null 2>&1 && echo \"skip $id\" || (cd \"$d\" && npm publish); done",
-    "build": "npm run build --workspaces --if-present",
-    "members": "node scripts/members.js",
-    "prepublishOnly": "node scripts/members.js --check"
+    "build": "npm run build --workspaces --if-present"
   },
   "repository": {
     "type": "git",

@@ -1,0 +1,16 @@
+// @audio/encode/audio: the family's manifests for the audio host, each member's own /audio entry under its names.
+// A member is a package of packages/ the umbrella depends on that has an audio.js (test.js holds this list to them).
+export * from '@audio/encode-aac/audio'
+export * from '@audio/encode-aiff/audio'
+export * from '@audio/encode-alac/audio'
+export * from '@audio/encode-caf/audio'
+export * from '@audio/encode-flac/audio'
+export * from '@audio/encode-gsm/audio'
+export * from '@audio/encode-mp3/audio'
+export * from '@audio/encode-mp4/audio'
+export * from '@audio/encode-ogg/audio'
+export * from '@audio/encode-opus/audio'
+export * from '@audio/encode-qoa/audio'
+export * from '@audio/encode-wav/audio'
+export * from '@audio/encode-wavpack/audio'
+export * from '@audio/encode-webm/audio'
